@@ -1,5 +1,5 @@
 The files in this repository (3DTrackerFAB-main) are licensed under MIT Licence 
-(except for the files under imgui folder), as follows :
+(except for the files in imgui folder), as follows :
 
 The MIT License
 Copyright 2017-2017 Jumpei Matsumoto and contributors of 3DTrackerFAB-main repository
