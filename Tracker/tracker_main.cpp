@@ -137,31 +137,6 @@ void sortPcByDepth(pcl::PointCloud<pcl::PointXYZRGBNormal> &pc_in, pcl::PointClo
 
 }
 
-void printMicPos()
-{
-	int i;
-
-	for (i = 0; i < fileIO->metadata.num_camera; i++)
-	{
-		pcl::PointCloud<pcl::PointXYZ> pc_mic_pos;
-		pcl::PointXYZ p_mic(-0.015, 0.035, 0.012);
-		pc_mic_pos.push_back(p_mic);
-
-		pcl::transformPointCloud(pc_mic_pos, pc_mic_pos, fileIO->metadata.pc_transforms[i]);
-		pcl::transformPointCloud(pc_mic_pos, pc_mic_pos, fileIO->metadata.ref_cam_transform);
-
-		std::cout << "mic " << i + 1 << ": " << pc_mic_pos[0].x << ", " << pc_mic_pos[0].y << ", " << pc_mic_pos[0].z << std::endl;
-	}
-}
-
-void printCurPos()
-{
-	if (pos_cursor.size() == 1)
-	{
-		std::cout << "Red point: " << pos_cursor[0].x << ", " << pos_cursor[0].y << ", " << pos_cursor[0].z << std::endl;
-	}
-}
-
 void calcNosePos(long frame_id)
 {
 	int i, j;
@@ -233,7 +208,6 @@ void calcNosePos(long frame_id)
 	}
 
 }
-
 
 void hsvFilterPc(pcl::PointCloud < pcl::PointXYZRGBNormal> & pc_in,
 	pcl::PointCloud < pcl::PointXYZRGBNormal> & pc_out,
@@ -901,6 +875,7 @@ void drawGUI()
 	static bool show_tracking_tools_window = false;
 	static bool show_view_setting_window = false;
 	static bool show_framerate_window = false;
+	static bool show_measurement_window = false;
 
 	ImGui_ImplGLUT_NewFrame(getAppScreenWidth(), getAppScreenHeight());
 
@@ -1044,6 +1019,10 @@ void drawGUI()
 
 			ImGui::Separator();
 
+			if (ImGui::MenuItem("Measurement", "", &show_measurement_window)) {}
+
+			ImGui::Separator();
+
 			if (ImGui::MenuItem("Frame rate", "", &show_framerate_window)) {}
 
 			ImGui::EndMenu();
@@ -1056,14 +1035,6 @@ void drawGUI()
 			{
 				exportNosePos();
 			}
-			if (ImGui::MenuItem("Print red point position in console"))
-			{
-				printCurPos();
-			}
-			/*if (ImGui::MenuItem("Print Mic position in console"))
-			{
-				printMicPos();
-			}*/
 
 			ImGui::EndMenu();
 		}
@@ -1432,6 +1403,97 @@ void drawGUI()
 		ImGui::SetNextWindowPos(ImVec2(getAppScreenWidth() - 130, getAppScreenHeight() - 40));
 		ImGui::Begin("Frame Rate Window", nullptr, ImVec2(0, 0), 0.3f, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
 		ImGui::Text("%.1f frames/sec", ImGui::GetIO().Framerate);
+		ImGui::End();
+	}
+
+	if (show_measurement_window)
+	{
+		ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiSetCond_Once);
+		ImGui::Begin("Measurement", &show_measurement_window, ImGuiWindowFlags_AlwaysAutoResize);
+
+		static char measurement_output[1024 * 16] = "";
+
+		if (ImGui::TreeNode("Location##Measurement"))
+		{
+
+			ImGui::Text("Select a point with 'Shift + left click'");
+			if (ImGui::Button("Measure##Location")) 
+			{
+				if (pos_cursor.size() == 1)
+				{
+					sprintf(measurement_output, "%slocation (x, y, z; m): \n  %.3f, %.3f, %.3f\n",
+						measurement_output, pos_cursor[0].x, pos_cursor[0].y, pos_cursor[0].z);
+				}
+				else
+				{
+					sprintf(measurement_output, "%slocation (x, y, z; m): \n  Error! Select a point.\n", measurement_output);
+				}
+			}
+
+			ImGui::TreePop();
+		}
+
+		if (ImGui::TreeNode("Distance##Measurement"))
+		{
+			ImGui::Text("Select two points with 'Shift + left click'");
+			if (ImGui::Button("Measure##Distance"))
+			{
+				if (pos_cursor.size() == 2)
+				{
+					float dx = fabs(pos_cursor[0].x - pos_cursor[1].x);
+					float dy = fabs(pos_cursor[0].y - pos_cursor[1].y);
+					float dz = fabs(pos_cursor[0].z - pos_cursor[1].z);
+					float D = sqrt(dx*dx + dy*dy + dz*dz);
+
+					sprintf(measurement_output, "%sDistance (m): \n  dX = %.3f\n  dY= %.3f\n  dZ = %.3f\n  distance = %.3f\n",
+						measurement_output, dx, dy, dz, D);
+				}
+				else
+				{
+					sprintf(measurement_output, "%sDistance (m): \n  Error! Select two points.\n", measurement_output);
+				}
+			}
+
+			ImGui::TreePop();
+		}
+
+		if (ImGui::TreeNode("Cam xyz to world xyz##Measurement"))
+		{
+			static float xyz_cam[3] = { 0.0, 0.0, 0.0 };
+			ImGui::InputFloat("X (m)", &xyz_cam[0]);
+			ImGui::InputFloat("Y (m)", &xyz_cam[1]);
+			ImGui::InputFloat("Z (m)", &xyz_cam[2]);
+
+			if (ImGui::Button("Calculate##Cam2World"))
+			{
+				sprintf(measurement_output, "%sXYZ in world coordinate (m):\n", measurement_output);
+				for (i = 0; i < fileIO->metadata.num_camera; i++)
+				{
+					pcl::PointCloud<pcl::PointXYZ> pc_pos_in_world;
+					pcl::PointXYZ p(xyz_cam[0], xyz_cam[1], xyz_cam[2]);	
+					pc_pos_in_world.push_back(p);
+
+					pcl::transformPointCloud(pc_pos_in_world, pc_pos_in_world, fileIO->metadata.pc_transforms[i]);
+					pcl::transformPointCloud(pc_pos_in_world, pc_pos_in_world, fileIO->metadata.ref_cam_transform);
+
+					sprintf(measurement_output, "%s  cam%02d: %.3f, %.3f, %.3f\n", measurement_output, i+1, pc_pos_in_world[0].x, pc_pos_in_world[0].y, pc_pos_in_world[0].z);
+				}
+			}
+
+			ImGui::TreePop();
+		}
+
+		ImGui::Separator();
+		ImGui::Text("Output:");
+		ImGui::InputTextMultiline("##source", measurement_output, 1024 * 16,
+			ImVec2(350, ImGui::GetTextLineHeight() * 8), 
+			ImGuiInputTextFlags_AllowTabInput | ImGuiInputTextFlags_ReadOnly);
+
+		if (ImGui::Button("Clear##Measurement"))
+		{
+			sprintf(measurement_output, "\0");
+		}
+
 		ImGui::End();
 	}
 
