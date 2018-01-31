@@ -26,6 +26,7 @@
 #include <pcl/segmentation/sac_segmentation.h>
 
 #include <iostream>
+#include <shlwapi.h>
 
 
 ///// BUILD OPTIONS	 /////
@@ -227,7 +228,7 @@ void getProcessedPC(pcl::PointCloud<pcl::PointXYZRGB> &pc, int camera_id)
 	}
 }
 
-void startRecording()
+void startRecording(bool enable_overwrite_warning)
 {
 	int i;
 
@@ -235,6 +236,15 @@ void startRecording()
 
 	char dname[1024];
 	sprintf(dname, "data\\%s\\", rec_session_name);
+
+	if (enable_overwrite_warning)
+	{
+		if (PathFileExistsA(dname))
+		{
+			ImGui::OpenPopup("Overwrite?");
+			return;
+		}
+	}
 
 	fileIO = std::make_shared<MyFileIO>(dname, rec_session_name, metadata);
 	fileIO->saveMetadata();
@@ -253,6 +263,8 @@ void startRecording()
 #ifdef BUILD_ENABLE_DIO
 	frame_ttl_nextsig = true;
 #endif
+
+	ImGui::OpenPopup("Recording...");
 }
 
 void stopRecording()
@@ -385,21 +397,33 @@ void drawGUI()
 			ImGui::InputText("Session name", rec_session_name, 256);
 
 			if (!recording)
-			{
+			{	
 				if (ImGui::Button("Start Recording RGBD"))
 				{
 					recording_data_type = MyFileIO::DATA_TYPE_RGBD;
-					startRecording();
-
-					ImGui::OpenPopup("Recording...");
+					startRecording(true);
 				}
 
 				if (ImGui::Button("Start Recording Point Cloud"))
 				{
 					recording_data_type = MyFileIO::DATA_TYPE_PC;
-					startRecording();
+					startRecording(true);
+				}
 
-					ImGui::OpenPopup("Recording...");
+				if (ImGui::BeginPopupModal("Overwrite?", NULL, ImGuiWindowFlags_AlwaysAutoResize))
+				{
+					bool overwrite = false;
+					ImGui::Text("The file already exist!");
+					if (ImGui::Button("Overwrite", ImVec2(120, 0))) 
+					{ 
+						ImGui::CloseCurrentPopup(); 
+						overwrite = true;
+					}
+					ImGui::SameLine();
+					if (ImGui::Button("Cancel", ImVec2(120, 0))) { ImGui::CloseCurrentPopup(); }
+					ImGui::EndPopup();
+
+					if (overwrite) startRecording(false);
 				}
 			}
 			else
