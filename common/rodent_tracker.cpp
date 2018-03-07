@@ -52,6 +52,10 @@ RodentTrackerParam::RodentTrackerParam()
 	cf_hsv_max[0] = 255; cf_hsv_max[1] = 255; cf_hsv_max[2] = 255;
 	cf_enable = false;
 	cf_inc = 0;
+
+	orf_enable = false;
+	orf_meanK = 10;
+	orf_thresh = 0.05;
 }
 
 void RodentTrackerParam::save(const char * filename)

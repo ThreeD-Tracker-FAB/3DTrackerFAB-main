@@ -82,6 +82,10 @@ public:
 	bool cf_enable;			//color filter - enable or disable
 	int cf_inc;				//color filter - include or exclude
 
+	bool orf_enable;		//outlier removal filter - enable or disable
+	int orf_meanK;			//outlier removal filter - meanK
+	float orf_thresh;		//outlier removal filter - thresh
+
 	RodentTrackerParam();
 
 	void save(const char* filename);
@@ -148,11 +152,17 @@ private:
 			ar & BOOST_SERIALIZATION_NVP(cf_enable);
 			ar & BOOST_SERIALIZATION_NVP(cf_inc);
 		}
+		if (version >= 3)
+		{
+			ar & BOOST_SERIALIZATION_NVP(orf_enable);
+			ar & BOOST_SERIALIZATION_NVP(orf_meanK);
+			ar & BOOST_SERIALIZATION_NVP(orf_thresh);
+		}
 	}
 
 };
 
-BOOST_CLASS_VERSION(RodentTrackerParam, 2);
+BOOST_CLASS_VERSION(RodentTrackerParam, 3);
 
 class RodentTracker {
 public:

@@ -20,6 +20,7 @@
 #include "btBulletDynamicsCommon.h"
 #include <pcl/octree/octree.h>
 #include <pcl/filters/crop_box.h>
+#include <pcl/filters/radius_outlier_removal.h>
 
 #include <time.h>
 #include <stdio.h>
@@ -240,6 +241,19 @@ void hsvFilterPc(pcl::PointCloud < pcl::PointXYZRGBNormal> & pc_in,
 	pc_out = tmp_pc;
 }
 
+void outlierRemoveFilterPc(pcl::PointCloud < pcl::PointXYZRGBNormal> & pc_in,
+	pcl::PointCloud < pcl::PointXYZRGBNormal> & pc_out,
+	int meanK, float thresh)
+{
+	if (pc_in.size() == 0) return;
+
+	pcl::RadiusOutlierRemoval<pcl::PointXYZRGBNormal> outrem;
+	outrem.setInputCloud(pc_in.makeShared());
+	outrem.setRadiusSearch(thresh);
+	outrem.setMinNeighborsInRadius(meanK);
+	outrem.filter(pc_out);
+}
+
 void readFrame(size_t i_frame)
 {
 	pcl::PointCloud<pcl::PointXYZRGB> pc_xyzrgb;
@@ -256,6 +270,7 @@ void readFrame(size_t i_frame)
 	cb.filter(pc_crntframe);
 
 	if (tracker_param->cf_enable) hsvFilterPc(pc_crntframe, pc_crntframe, cv::Scalar(tracker_param->cf_hsv_min[0], tracker_param->cf_hsv_min[1], tracker_param->cf_hsv_min[2]), cv::Scalar(tracker_param->cf_hsv_max[0], tracker_param->cf_hsv_max[1], tracker_param->cf_hsv_max[2]), tracker_param->cf_inc==0);
+	if (tracker_param->orf_enable) outlierRemoveFilterPc(pc_crntframe, pc_crntframe, tracker_param->orf_meanK, tracker_param->orf_thresh);
 
 	tracker->setPointCloud(pc_crntframe);
 }
@@ -876,6 +891,7 @@ void drawGUI()
 	static bool show_view_setting_window = false;
 	static bool show_framerate_window = false;
 	static bool show_measurement_window = false;
+	static bool show_outlier_removal_filter_window = false;
 
 	ImGui_ImplGLUT_NewFrame(getAppScreenWidth(), getAppScreenHeight());
 
@@ -1016,6 +1032,7 @@ void drawGUI()
 			if (ImGui::MenuItem("Physics sim params", "", &show_phyparam_window)) {}
 			if (ImGui::MenuItem("ROI setting", "", &show_roi_setting_window)) {}
 			if (ImGui::MenuItem("Color filter", "", &show_color_filter_window)) {}
+			if (ImGui::MenuItem("Outlier removal", "", &show_outlier_removal_filter_window)) {}
 
 			ImGui::Separator();
 
@@ -1494,6 +1511,18 @@ void drawGUI()
 			sprintf(measurement_output, "\0");
 		}
 
+		ImGui::End();
+	}
+
+	if (show_outlier_removal_filter_window)
+	{
+		ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiSetCond_Once);
+		ImGui::Begin("Outlier Removal", &show_outlier_removal_filter_window, ImGuiWindowFlags_AlwaysAutoResize);
+
+		if (ImGui::Checkbox("Enable Filtering##OR Filt", &tracker_param->orf_enable)) { readFrame(i_crntframe); }
+		if (ImGui::SliderInt("Min Neighbors##OR Filt", &tracker_param->orf_meanK, 1, 200)) { readFrame(i_crntframe); }
+		if (ImGui::SliderFloat("Radius (m)##OR Filt", &tracker_param->orf_thresh, 0.001, 1.0, "%.3f", 3.0)) { readFrame(i_crntframe); }
+	
 		ImGui::End();
 	}
 
