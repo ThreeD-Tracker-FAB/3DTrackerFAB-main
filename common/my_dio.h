@@ -15,7 +15,7 @@ public:
 		task_handle = 0;
 
 		DAQmxCreateTask("", &task_handle);
-		DAQmxCreateDOChan(task_handle, "Dev1/port0/line0:0", "", DAQmx_Val_ChanForAllLines);	// port0.0 for single ch output
+		DAQmxCreateDOChan(task_handle, "Dev_3DT/port0/line0:0", "", DAQmx_Val_ChanForAllLines);	// port0.0 for single ch output
 		
 		DAQmxStartTask(task_handle);
 
