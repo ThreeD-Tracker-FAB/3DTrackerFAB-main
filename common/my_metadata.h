@@ -77,7 +77,7 @@ public:
 		calib_color_filt_b_range[0] = 100;
 		calib_color_filt_b_range[1] = 255;
 		calib_outlier_removal_meanK = 50;
-		calib_outlier_removal_thresh = 1.0;
+		calib_outlier_removal_thresh = 0.1;
 		calib_pointer_diameter = 40.0;
 
 		rec_enable_roi_filtering = false;

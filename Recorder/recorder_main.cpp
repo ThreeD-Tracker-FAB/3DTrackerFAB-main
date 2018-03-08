@@ -567,7 +567,7 @@ void drawGUI()
 				ImGui::Separator();
 
 				ImGui::Text("Outlier Removal");
-				if (ImGui::SliderInt("meanK##Outlier Removal", &metadata.calib_outlier_removal_meanK, 1, 200))
+				if (ImGui::SliderInt("Min Neighbors##Outlier Removal", &metadata.calib_outlier_removal_meanK, 1, 200))
 				{
 					PointCloudFilterSetting pcsf;
 					pcsf.color_filt_on = test_color_filtering;
@@ -578,7 +578,7 @@ void drawGUI()
 					pcsf.outlier_filt_thresh = metadata.calib_outlier_removal_thresh;
 					cap->setColorFilter(pcsf);
 				}
-				if (ImGui::SliderFloat("Threshold (SD)##Outlier Removal", &metadata.calib_outlier_removal_thresh, 0.001, 5.0, "%.3f", 3.0))
+				if (ImGui::SliderFloat("Radius (m)##Outlier Removal", &metadata.calib_outlier_removal_thresh, 0.001, 5.0, "%.3f", 3.0))
 				{
 					PointCloudFilterSetting pcsf;
 					pcsf.color_filt_on = test_color_filtering;
