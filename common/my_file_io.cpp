@@ -10,8 +10,6 @@
 
 #include <vtk_zlib.h>
 
-#include <boost/thread.hpp>
-#include <boost/bind.hpp>
 
 MyFileIO::MyFileIO() 
 	: data_dir(""), session_name("")
@@ -328,6 +326,7 @@ void MyFileIO::write2DVideoFrame(cv::Mat color_frame, int camera_id)
 	}
 }
 
+/*
 void MyFileIO::preprocessFrame(std::vector<pcl::PointCloud<pcl::PointXYZRGB>> & pc_input, pcl::PointCloud<pcl::PointXYZRGBNormal> & pc_merged, float gridsize, std::vector<bool> cam_enable)
 {
 	int i;
@@ -392,6 +391,7 @@ void MyFileIO::preprocessFrame(std::vector<pcl::PointCloud<pcl::PointXYZRGB>> & 
 	vgf.setInputCloud(pc_merged.makeShared());
 	vgf.filter(pc_merged);
 }
+*/
 
 void MyFileIO::preprosessData(float gridsize, std::vector<bool> cam_enable)
 {
@@ -457,7 +457,7 @@ void MyFileIO::preprosessData(float gridsize, std::vector<bool> cam_enable)
 
 		pcl::PointCloud<pcl::PointXYZRGBNormal> pc_merged;
 
-		preprocessFrame(pc_input, pc_merged, gridsize, cam_enable);
+		preprocessFrame(metadata, pc_input, pc_merged, gridsize, cam_enable);
 		
 		// write frame timestamp to file
 		fpos_t pos = ofs_framedata[0].tellp().seekpos();

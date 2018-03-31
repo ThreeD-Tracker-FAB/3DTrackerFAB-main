@@ -8,6 +8,8 @@
 #include <pcl/common/transforms.h>
 #include <sstream>
 
+#include "my_metadata.h"
+
 struct SettingParam
 {
 	double value;
@@ -85,3 +87,4 @@ public:
 
 // convenience functions
 void removeNoiseFromThresholdedPc(pcl::PointCloud<pcl::PointXYZRGB> & pc, int meanK, float thresh); // removing outlier noise from point cloud
+void preprocessFrame(MyMetadata & metadata, std::vector<pcl::PointCloud<pcl::PointXYZRGB>> & pc_input, pcl::PointCloud<pcl::PointXYZRGBNormal> & pc_merged, float gridsize, std::vector<bool> cam_enable = std::vector<bool>());
