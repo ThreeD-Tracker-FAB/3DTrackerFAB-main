@@ -62,6 +62,7 @@ public:
 	void start2DVideoWriter(int camera_id, int w = 320, int h = 240, int fourcc = CV_FOURCC('X', 'V', 'I', 'D'));
 	void write2DVideoFrame(cv::Mat color_frame, int camera_id);
 
+	void preprocessFrame(std::vector<pcl::PointCloud<pcl::PointXYZRGB>> & pc_input, pcl::PointCloud<pcl::PointXYZRGBNormal> & pc_merged, float gridsize, std::vector<bool> cam_enable = std::vector<bool>());
 	void preprosessData(float gridsize, std::vector<bool> cam_enable = std::vector<bool>());
 
 	void startRgbdReader();
