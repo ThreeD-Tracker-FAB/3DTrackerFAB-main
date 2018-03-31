@@ -495,7 +495,7 @@ void MyFileIO::preprosessData(float gridsize, std::vector<bool> cam_enable)
 
 	closeFiles();
 
-	std::cout << clock() - t0 << " ms took for preprocessing" << std::endl;
+	//std::cout << clock() - t0 << " ms took for preprocessing" << std::endl;
 }
 
 void MyFileIO::startRgbdReader()
