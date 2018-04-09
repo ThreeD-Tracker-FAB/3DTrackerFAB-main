@@ -12,57 +12,69 @@
 
 
 MyFileIO::MyFileIO() 
-	: data_dir(""), session_name("")
+	: data_dir(""), session_name(""), online_mode(false)
 {
 }
 
-MyFileIO::MyFileIO(const std::string & metadatafilepath)
+MyFileIO::MyFileIO(const std::string & metadatafilepath, bool online)
+	: online_mode(online)
 {
-	if (metadatafilepath == "")
+	if (online)
 	{
-		OPENFILENAMEA ofn;
-		char szFile[MAX_PATH] = "";
-		ZeroMemory(&ofn, sizeof(ofn));
-		ofn.lStructSize = sizeof(OPENFILENAMEA);
-		ofn.lpstrFilter = "Metadata (*.metadata.xml)\0*.metadata.xml\0";
-		ofn.lpstrFile = szFile;
-		ofn.nMaxFile = MAX_PATH;
-		ofn.Flags = OFN_FILEMUSTEXIST;
+		data_dir = "";
+		session_name = "";
 
-		GetOpenFileNameA(&ofn);
+		metadata.loadFile(metadatafilepath.c_str());
 
-		std::string fullpath(ofn.lpstrFile);
-
-		int path_i = fullpath.find_last_of("\\") + 1;
-
-		data_dir = fullpath.substr(0, path_i);
-
-		std::string metadatafilename = fullpath.substr(path_i, fullpath.length());
-
-		int ss_i = metadatafilename.find(".metadata.xml");
-
-		session_name = metadatafilename.substr(0, ss_i);
+		cap = MyCapture::create(metadata.cam_model_name);
 	}
 	else
 	{
-		int path_i = metadatafilepath.find_last_of("\\") + 1;
+		if (metadatafilepath == "")
+		{
+			OPENFILENAMEA ofn;
+			char szFile[MAX_PATH] = "";
+			ZeroMemory(&ofn, sizeof(ofn));
+			ofn.lStructSize = sizeof(OPENFILENAMEA);
+			ofn.lpstrFilter = "Metadata (*.metadata.xml)\0*.metadata.xml\0";
+			ofn.lpstrFile = szFile;
+			ofn.nMaxFile = MAX_PATH;
+			ofn.Flags = OFN_FILEMUSTEXIST;
 
-		data_dir = metadatafilepath.substr(0, path_i);
+			GetOpenFileNameA(&ofn);
 
-		std::string metadatafilename = metadatafilepath.substr(path_i, metadatafilepath.length());
+			std::string fullpath(ofn.lpstrFile);
 
-		int ss_i = metadatafilename.find(".metadata.xml");
+			int path_i = fullpath.find_last_of("\\") + 1;
 
-		session_name = metadatafilename.substr(0, ss_i);
+			data_dir = fullpath.substr(0, path_i);
 
+			std::string metadatafilename = fullpath.substr(path_i, fullpath.length());
+
+			int ss_i = metadatafilename.find(".metadata.xml");
+
+			session_name = metadatafilename.substr(0, ss_i);
+		}
+		else
+		{
+			int path_i = metadatafilepath.find_last_of("\\") + 1;
+
+			data_dir = metadatafilepath.substr(0, path_i);
+
+			std::string metadatafilename = metadatafilepath.substr(path_i, metadatafilepath.length());
+
+			int ss_i = metadatafilename.find(".metadata.xml");
+
+			session_name = metadatafilename.substr(0, ss_i);
+		}
+
+		loadMetadata();
 	}
-
-	loadMetadata();
 
 }
 
 MyFileIO::MyFileIO(const std::string & path_data_dir, const std::string & name_session, MyMetadata & md)
-	: data_dir(path_data_dir), session_name(name_session)
+	: data_dir(path_data_dir), session_name(name_session), online_mode(false)
 {
 	if (PathIsDirectoryA(data_dir.c_str()) == 0)
 	{
@@ -73,6 +85,16 @@ MyFileIO::MyFileIO(const std::string & path_data_dir, const std::string & name_s
 
 MyFileIO::~MyFileIO()
 {
+}
+
+void MyFileIO::resetRecDir(const std::string & path_data_dir, const std::string & name_session)
+{
+	data_dir = path_data_dir; 
+	session_name = name_session;
+	if (PathIsDirectoryA(data_dir.c_str()) == 0)
+	{
+		_mkdir(data_dir.c_str());
+	}
 }
 
 void MyFileIO::saveMetadata()
@@ -102,7 +124,15 @@ void MyFileIO::loadTrackingResult(RodentTrackerResult & result)
 
 void MyFileIO::saveTrackingParam(RodentTrackerParam & param)
 {
-	std::string filepath = data_dir + session_name + ".trackparam.txt";
+	std::string filepath;
+	if (online_mode)
+	{
+		filepath = data_dir + session_name + ".trackparam_online.xml";
+	}
+	else
+	{
+		filepath = data_dir + session_name + ".trackparam.txt";
+	}
 	param.save(filepath.c_str());
 }
 
@@ -146,6 +176,8 @@ bool MyFileIO::checkPcDataExist()
 
 bool MyFileIO::checkMergedPcDataExist()
 {
+	if (online_mode) return true;
+
 	std::string filepath;
 	filepath = data_dir + session_name + ".mrgpc.frame.bin";
 	if (!PathFileExistsA(filepath.c_str())) return false;
@@ -183,6 +215,8 @@ void MyFileIO::check2DVideoExist(std::vector<bool> & vid_exist)
 
 	for (i = 0; i < metadata.num_camera; i++)
 	{
+		if (online_mode) { vid_exist[i] = true; continue; }
+
 		filepath = data_dir + session_name + ".2dvideo." + std::to_string(i + 1) + ".avi";
 		vid_exist[i] = PathFileExistsA(filepath.c_str());
 	}
@@ -326,72 +360,55 @@ void MyFileIO::write2DVideoFrame(cv::Mat color_frame, int camera_id)
 	}
 }
 
-/*
-void MyFileIO::preprocessFrame(std::vector<pcl::PointCloud<pcl::PointXYZRGB>> & pc_input, pcl::PointCloud<pcl::PointXYZRGBNormal> & pc_merged, float gridsize, std::vector<bool> cam_enable)
+void MyFileIO::startMergedPcWriter()
 {
-	int i;
+	std::string filepath;
 
-	std::vector<pcl::PointCloud<pcl::PointXYZRGBNormal>> pc_processed;
-	pc_processed.resize(pc_input.size());
-
-	for (i = 0; i < metadata.num_camera; i++)
 	{
-		if (cam_enable.size() == metadata.num_camera && !cam_enable[i]) continue;
-
-		// ROI filtering
-		pcl::CropBox<pcl::PointXYZRGB> cb;
-		cb.setMin(Eigen::Vector4f(metadata.roi.x[0], metadata.roi.y[0], metadata.roi.z[0], 1.0));
-		cb.setMax(Eigen::Vector4f(metadata.roi.x[1], metadata.roi.y[1], metadata.roi.z[1], 1.0));
-		cb.setInputCloud(pc_input[i].makeShared());
-		cb.filter(pc_input[i]);
-
-		// VoxelGrid filter
-		pcl::VoxelGrid<pcl::PointXYZRGB> vgf;
-		vgf.setLeafSize(gridsize, gridsize, gridsize);
-		vgf.setInputCloud(pc_input[i].makeShared());
-		vgf.filter(pc_input[i]);
-
-		// calculate camera position
-		pcl::PointCloud<pcl::PointXYZ> pc_camera_pos;
-		pcl::PointXYZ p_o(0.0, 0.0, 0.0);
-		pc_camera_pos.push_back(p_o);
-
-		pcl::transformPointCloud(pc_camera_pos, pc_camera_pos, metadata.pc_transforms[i]);
-		pcl::transformPointCloud(pc_camera_pos, pc_camera_pos, metadata.ref_cam_transform);
-
-		// calculate surface normal
-		pcl::PointCloud<pcl::PointXYZ> pc_input_xyz;
-
-		for (auto p : pc_input[i])
-		{
-			pcl::PointXYZ pxyz(p.x, p.y, p.z);
-			pc_input_xyz.push_back(pxyz);
-		}
-
-		pcl::PointCloud<pcl::Normal> pc_n;
-		pcl::NormalEstimationOMP<pcl::PointXYZ, pcl::Normal> ne;
-		ne.setInputCloud(pc_input_xyz.makeShared());
-		pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(new pcl::search::KdTree<pcl::PointXYZ>());
-		ne.setSearchMethod(tree);
-		ne.setRadiusSearch(gridsize*5.0);
-		ne.setViewPoint(pc_camera_pos[0].x, pc_camera_pos[0].y, pc_camera_pos[0].z);
-		ne.compute(pc_n);
-		
-		pcl::PointCloud<pcl::PointXYZRGBNormal> pc_to_add;
-		pcl::concatenateFields(pc_input[i], pc_n, pc_to_add);
-		
-		pc_merged += pc_to_add;
+		filepath = data_dir + session_name + ".mrgpc.frame.bin";
+		std::ofstream ofs(filepath, std::ios::out | std::ios::binary);
+		ofs_framedata.push_back(std::move(ofs));
 	}
 
-	for (i = 0; i < metadata.num_camera; i++) pc_merged += pc_processed[i];
-
-	// VoxelGrid filter
-	pcl::VoxelGrid<pcl::PointXYZRGBNormal> vgf;
-	vgf.setLeafSize(gridsize, gridsize, gridsize);
-	vgf.setInputCloud(pc_merged.makeShared());
-	vgf.filter(pc_merged);
+	{
+		filepath = data_dir + session_name + ".mrgpc.ts.txt";
+		std::ofstream ofs(filepath, std::ios::out);
+		ofs_timestamp.push_back(std::move(ofs));
+	}
 }
-*/
+
+void MyFileIO::writeMergedPcFrame(pcl::PointCloud<pcl::PointXYZRGBNormal>& pc_merged, double timestamp)
+{
+	// write frame timestamp to file
+	fpos_t pos = ofs_framedata[0].tellp().seekpos();
+	ofs_timestamp[0] << std::fixed << timestamp << "   " << pos << std::endl;
+
+	// write point cloud to file
+
+	pcl::PointCloud<pcl::PointXYZRGB> pc_out_xyzrgb;
+	pcl::PointCloud<pcl::Normal> pc_out_n;
+
+	for (auto p : pc_merged)
+	{
+		pcl::PointXYZRGB pp;
+		pcl::Normal pn;
+
+		pp.x = p.x; pp.y = p.y; pp.z = p.z;
+		pp.r = p.r; pp.g = p.g; pp.b = p.b;
+
+		pc_out_xyzrgb.push_back(pp);
+
+		pn.normal_x = p.normal_x;
+		pn.normal_y = p.normal_y;
+		pn.normal_z = p.normal_z;
+
+		pc_out_n.push_back(pn);
+	}
+
+	if (pc_out_xyzrgb.size() != pc_out_n.size()) std::cout << "!!!" << std::endl;
+
+	encodePc(pc_out_xyzrgb, pc_out_n, ofs_framedata[0]);
+}
 
 void MyFileIO::preprosessData(float gridsize, std::vector<bool> cam_enable)
 {
@@ -415,6 +432,8 @@ void MyFileIO::preprosessData(float gridsize, std::vector<bool> cam_enable)
 
 	for (auto fi : frame_index) if (fi.size() > num_frame) num_frame = fi.size();
 
+	startMergedPcWriter();
+	/*
 	std::string filepath;
 
 	{
@@ -428,6 +447,7 @@ void MyFileIO::preprosessData(float gridsize, std::vector<bool> cam_enable)
 		std::ofstream ofs(filepath, std::ios::out);
 		ofs_timestamp.push_back(std::move(ofs));
 	}
+	*/
 
 	for (int i_frame = 0; i_frame < num_frame; i_frame++)
 	{
@@ -459,6 +479,8 @@ void MyFileIO::preprosessData(float gridsize, std::vector<bool> cam_enable)
 
 		preprocessFrame(metadata, pc_input, pc_merged, gridsize, cam_enable);
 		
+		writeMergedPcFrame(pc_merged, frame_index[0][i_frame].ts);
+		/*
 		// write frame timestamp to file
 		fpos_t pos = ofs_framedata[0].tellp().seekpos();
 		ofs_timestamp[0] << std::fixed << frame_index[0][i_frame].ts << "   " << pos << std::endl;
@@ -488,6 +510,7 @@ void MyFileIO::preprosessData(float gridsize, std::vector<bool> cam_enable)
 		if (pc_out_xyzrgb.size() != pc_out_n.size()) std::cout << "!!!" << std::endl;
 
 		encodePc(pc_out_xyzrgb, pc_out_n, ofs_framedata[0]);
+		*/
 
 		if (num_frame > 50 && (i_frame + 1) % (size_t)(num_frame / 50) == 0) std::cout << "#";
 	}
@@ -636,6 +659,8 @@ void MyFileIO::readPcFrame(pcl::PointCloud<pcl::PointXYZRGB>& pc, int camera_id,
 
 void MyFileIO::startMergedPcReader()
 {
+	if (online_mode) return;
+
 	closeFiles();
 
 	int i;
@@ -671,13 +696,55 @@ void MyFileIO::startMergedPcReader()
 
 void MyFileIO::readMergedPcFrame(pcl::PointCloud<pcl::PointXYZRGB>& pc, pcl::PointCloud<pcl::Normal>& pc_n, size_t frame_id)
 {
-	ifs_framedata[0].seekg(frame_index[0][frame_id].fpos, std::ios_base::beg);
+	int i;
 
-	decodePc(pc, pc_n, ifs_framedata[0]);
+	if (online_mode)
+	{
+		cap->getPointClouds();
+
+		std::vector<pcl::PointCloud<pcl::PointXYZRGB>> pc_input;
+		pc_input.resize(metadata.num_camera);
+
+		for (i = 0; i < metadata.num_camera; i++)
+		{
+			cap->getPointCloudData(pc_input[i], i);
+
+			pcl::transformPointCloud(pc_input[i], pc_input[i], metadata.pc_transforms[i]);
+			pcl::transformPointCloud(pc_input[i], pc_input[i], metadata.ref_cam_transform);
+		}
+
+		pcl::PointCloud<pcl::PointXYZRGBNormal> pc_merged;
+
+		preprocessFrame(metadata, pc_input, pc_merged, metadata.rec_filter_voxel_size / 1000.0);
+
+		pc.clear();
+		pc_n.clear();
+		for (auto p_m : pc_merged)
+		{
+			pcl::PointXYZRGB p;
+			pcl::Normal n;
+
+			p.x = p_m.x; p.y = p_m.y; p.z = p_m.z;
+			p.r = p_m.r; p.g = p_m.g; p.b = p_m.b;
+
+			n.normal_x = p_m.normal_x; n.normal_y = p_m.normal_y; n.normal_z = p_m.normal_z;
+
+			pc.push_back(p);
+			pc_n.push_back(n);
+		}
+	}
+	else
+	{
+		ifs_framedata[0].seekg(frame_index[0][frame_id].fpos, std::ios_base::beg);
+
+		decodePc(pc, pc_n, ifs_framedata[0]);
+	}
 }
 
 void MyFileIO::start2DVideoReader()
 {
+	if (online_mode) return;
+
 	int i;
 	std::vector<bool> vid_exist;
 
@@ -703,24 +770,38 @@ void MyFileIO::start2DVideoReader()
 
 void MyFileIO::read2DVideoFrame(cv::Mat & vid_frame, int camera_id, size_t frame_id)
 {
-	if (cv_videocapture[camera_id] == NULL)
+	if (online_mode)
 	{
-		vid_frame = cv::Mat::zeros(cv::Size(640, 480), CV_8UC3);
+		cap->getFrameData(vid_frame, camera_id, "COLOR");
 	}
 	else
 	{
-		size_t crnt_frame = cv_videocapture[camera_id]->get(CV_CAP_PROP_POS_FRAMES);
-
-		if (crnt_frame != frame_id) cv_videocapture[camera_id]->set(CV_CAP_PROP_POS_FRAMES, frame_id);
-
-		*cv_videocapture[camera_id] >> vid_frame;
-
-		if (vid_frame.empty())
+		if (cv_videocapture[camera_id] == NULL)
 		{
 			vid_frame = cv::Mat::zeros(cv::Size(640, 480), CV_8UC3);
 		}
+		else
+		{
+			size_t crnt_frame = cv_videocapture[camera_id]->get(CV_CAP_PROP_POS_FRAMES);
 
+			if (crnt_frame != frame_id) cv_videocapture[camera_id]->set(CV_CAP_PROP_POS_FRAMES, frame_id);
+
+			*cv_videocapture[camera_id] >> vid_frame;
+
+			if (vid_frame.empty())
+			{
+				vid_frame = cv::Mat::zeros(cv::Size(640, 480), CV_8UC3);
+			}
+
+		}
 	}
+}
+
+double MyFileIO::updateOnlineFrame()
+{
+	cap->getNextFrames();
+
+	return cap->getFrameTimestamp(0);
 }
 
 void MyFileIO::closeFiles()

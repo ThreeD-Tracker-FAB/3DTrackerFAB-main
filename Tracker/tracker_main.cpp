@@ -69,6 +69,14 @@ std::vector<bool> colorvideo_exist;
 MyGlTexture colorvideo_monitor_tex;
 int colorvideo_monitor_cam_id = 0;
 
+bool online_mode = false;
+bool recording = false;
+size_t rec_frame_cnt;
+double rec_ts0;
+std::string camsetting_filepath;
+double ts_online;
+FILE *fp_online_result;
+
 
 void getColor(int animal_id, float *clr)
 {
@@ -254,25 +262,28 @@ void outlierRemoveFilterPc(pcl::PointCloud < pcl::PointXYZRGBNormal> & pc_in,
 	outrem.filter(pc_out);
 }
 
-void readFrame(size_t i_frame)
+void readFrame(size_t i_frame, bool update_tracker = true)
 {
 	pcl::PointCloud<pcl::PointXYZRGB> pc_xyzrgb;
 	pcl::PointCloud<pcl::Normal> pc_normal;
+	pcl::PointCloud<pcl::PointXYZRGBNormal> pc_tmp;
 
+	if (online_mode) ts_online = fileIO->updateOnlineFrame();
 	fileIO->readMergedPcFrame(pc_xyzrgb, pc_normal, i_frame);
 
-	pcl::concatenateFields(pc_xyzrgb, pc_normal, pc_crntframe);
+	pcl::concatenateFields(pc_xyzrgb, pc_normal, pc_tmp);
 
 	pcl::CropBox<pcl::PointXYZRGBNormal> cb;
 	cb.setMin(Eigen::Vector4f(fileIO->metadata.roi.x[0], fileIO->metadata.roi.y[0], fileIO->metadata.roi.z[0], 1.0));
 	cb.setMax(Eigen::Vector4f(fileIO->metadata.roi.x[1], fileIO->metadata.roi.y[1], fileIO->metadata.roi.z[1], 1.0));
-	cb.setInputCloud(pc_crntframe.makeShared());
-	cb.filter(pc_crntframe);
+	cb.setInputCloud(pc_tmp.makeShared());
+	cb.filter(pc_tmp);
 
-	if (tracker_param->cf_enable) hsvFilterPc(pc_crntframe, pc_crntframe, cv::Scalar(tracker_param->cf_hsv_min[0], tracker_param->cf_hsv_min[1], tracker_param->cf_hsv_min[2]), cv::Scalar(tracker_param->cf_hsv_max[0], tracker_param->cf_hsv_max[1], tracker_param->cf_hsv_max[2]), tracker_param->cf_inc==0);
-	if (tracker_param->orf_enable) outlierRemoveFilterPc(pc_crntframe, pc_crntframe, tracker_param->orf_meanK, tracker_param->orf_thresh);
+	if (tracker_param->cf_enable) hsvFilterPc(pc_tmp, pc_tmp, cv::Scalar(tracker_param->cf_hsv_min[0], tracker_param->cf_hsv_min[1], tracker_param->cf_hsv_min[2]), cv::Scalar(tracker_param->cf_hsv_max[0], tracker_param->cf_hsv_max[1], tracker_param->cf_hsv_max[2]), tracker_param->cf_inc==0);
+	if (tracker_param->orf_enable) outlierRemoveFilterPc(pc_tmp, pc_tmp, tracker_param->orf_meanK, tracker_param->orf_thresh);
 
-	tracker->setPointCloud(pc_crntframe);
+	pc_crntframe = pc_tmp;
+	if (update_tracker) tracker->setPointCloud(pc_crntframe);
 }
 
 void exportNosePos()
@@ -375,7 +386,10 @@ void initModelPos(void)
 
 void initTrackingResult(void)
 {
-	tracker_result.initialize(tracker_param->n_animal, fileIO->getNumFrame());
+	if (!online_mode)
+	{
+		tracker_result.initialize(tracker_param->n_animal, fileIO->getNumFrame());
+	}
 }
 
 void initTracking()
@@ -386,9 +400,10 @@ void initTracking()
 	tracker = std::shared_ptr<RodentTracker>(new RodentTracker(tracker_param));
 
 	i_crntframe = 0;
+
 	readFrame(i_crntframe);
 
-	if (fileIO->checkTrackingResultExist())
+	if (!online_mode && fileIO->checkTrackingResultExist())
 	{
 		fileIO->loadMetadata();
 		fileIO->loadTrackingParam(*tracker_param);
@@ -618,7 +633,49 @@ void showSetPosCursor(void)
 
 int main(int argc, char **argv)
 {	
+	for (int i = 1; i < argc; i++) {
+
+		if (strcmp(argv[i], "-online") == 0)
+		{
+			online_mode = true;
+			camsetting_filepath = argv[i + 1];
+			i = i + 1;
+		}
+		
+	}
+
 	startApp(argc, argv, "Tracker");
+
+	// --- online mode test code start
+	/*MyFileIO fio(camsetting_filepath, true);
+
+	fio.start2DVideoReader();
+	fio.startMergedPcReader();
+
+	size_t t = clock();
+	while (1)
+	{
+		fio.updateOnlineFrame();
+
+		cv::Mat clr_frame;
+		fio.read2DVideoFrame(clr_frame, 0, 0);
+
+		cv::imshow("test", clr_frame);
+
+		pcl::PointCloud<pcl::PointXYZRGB> pc_xyzrgb;
+		pcl::PointCloud<pcl::Normal> pc_normal;
+
+		fio.readMergedPcFrame(pc_xyzrgb, pc_normal, 0);
+		
+		std::cout << 1000.0/double(clock()-t) << " fps" << std::endl;
+		t = clock();
+
+		int key = cv::waitKey(1);
+		if (key == 27) break;		//ESC
+	}
+	cv::destroyAllWindows();
+	*/
+	// --- online mode test code end
 
 	return 0;
 }
@@ -626,6 +683,7 @@ int main(int argc, char **argv)
 void mouseAndKey()
 {
 	ImGuiIO& io = ImGui::GetIO();
+	for (int i = 0; i < tracker->sm.size(); i++) tracker->togglePointForce(i, true);
 
 	if (ImGui::IsKeyReleased(32))
 	{
@@ -735,6 +793,8 @@ void mouseAndKey()
 		body->translate(btVector3(ox, oy, oz) - p);
 
 		if (tracker_result.last_frame >= i_crntframe) tracker_result.last_frame = i_crntframe - 1;
+
+		tracker->togglePointForce(id, false);
 	}
 	else if (ImGui::IsMouseClicked(2))
 	{
@@ -784,11 +844,71 @@ void mouseAndKey()
 
 }
 
+void startOnlineResultOutput()
+{
+	int i;
+
+	// trace output into a csv file 
+	std::string data_dir;
+	std::string session_name;
+	std::string filepath;
+	fileIO->getDataDir(data_dir);
+	fileIO->getSessionName(session_name);
+	filepath = data_dir + session_name + ".result_online.csv";
+	fp_online_result = fopen(filepath.c_str(), "w");
+
+	//csv header -- code repetition!!
+	fprintf(fp_online_result, "N of animals:, %d \n", tracker->sm.size());
+	fprintf(fp_online_result, "frame, time, ");
+	for (i = 0; i < tracker->sm.size(); i++)
+	{
+		fprintf(fp_online_result, "Model-%d enabled, ", i + 1);
+	}
+	for (i = 0; i < tracker->sm.size(); i++)
+	{
+		fprintf(fp_online_result, "Head_x, Head_y, Head_z, Neck_x, Neck_y, Neck_z, Trunk_x, Trunk_y, Trunk_z, Hip_x, Hip_y, Hip_z, ");
+	}
+	fprintf(fp_online_result, "\n");
+}
+
+void startRecording()
+{
+	int i;
+
+	fileIO->saveMetadata();
+
+	fileIO->saveTrackingParam(*tracker_param);
+
+	fileIO->startMergedPcWriter();
+	for (i = 0; i < fileIO->metadata.num_camera; i++)
+	{
+		if (fileIO->metadata.rec_save_2d_vid[i])
+		{
+			fileIO->start2DVideoWriter(i, fileIO->metadata.rec_2d_vid_res[0], fileIO->metadata.rec_2d_vid_res[1]);
+		}
+	}
+
+	startOnlineResultOutput();
+
+	recording = true;
+	rec_frame_cnt = 0;
+	rec_ts0 = ts_online;
+}
+
+void stopRecording()
+{
+	fileIO->closeFiles();
+	fclose(fp_online_result);
+
+	recording = false;
+}
+
 void initApp()
 {
 	int i;
 
-	fileIO = std::make_shared<MyFileIO>("");
+	if (online_mode) fileIO = std::make_shared<MyFileIO>(camsetting_filepath, true);
+	else fileIO = std::make_shared<MyFileIO>("");
 
 	if (fileIO->checkMergedPcDataExist())
 	{
@@ -819,61 +939,114 @@ void loopApp()
 {
 	int i, j, k, step;
 
-	if (preproc_finished)
+	if (online_mode)
 	{
+		double ts_prev = ts_online;
 
-		if (i_preframe != i_crntframe)
+		if (recording)
 		{
-			readFrame(i_crntframe);
-			i_preframe = i_crntframe;
-
-			updateColorVideoFrame();
+			boost::thread_group thr_record;
+			thr_record.create_thread(boost::bind(&MyFileIO::writeMergedPcFrame, fileIO, pc_crntframe, ts_online));
+			for (i = 0; i < fileIO->metadata.num_camera; i++)
+			{
+				cv::Mat color;
+				fileIO->read2DVideoFrame(color, i, 0);
+				if (fileIO->metadata.rec_save_2d_vid[i]) thr_record.create_thread(boost::bind(&MyFileIO::write2DVideoFrame, fileIO, color, i));
+			}
+			thr_record.join_all();
 		}
 
-		if (i_crntframe <= tracker_result.last_frame)
-		{
-			for (i = 0; i < tracker->sm.size(); i++) tracker->setModelPos(i, tracker_result.pos[i][i_crntframe]);
-		}
-
-		if (!vplay)
+		boost::thread thr_readframe(boost::bind(&readFrame, 0, false));
+		while (!thr_readframe.timed_join(boost::posix_time::milliseconds(0)))
 		{
 			tracker->runSimStep();
 		}
-		else if (vplay && tracker_result.last_frame < i_crntframe)
+		
+		if (recording)
 		{
-			tracker->runSimUntilSteadyState();
+			fprintf(fp_online_result, "%d, %lf, ", rec_frame_cnt, (ts_prev - rec_ts0) / 1000.0);
 
 			for (i = 0; i < tracker->sm.size(); i++)
 			{
-				tracker->getModelPos(i, tracker_result.pos[i][i_crntframe]);
-
-				tracker_result.sm_enabled[i][i_crntframe] = checkModelInRoi(i);
+				if (checkModelInRoi(i)) fprintf(fp_online_result, "1, ");
+				else fprintf(fp_online_result, "0, ");
 			}
-			tracker_result.last_frame = i_crntframe;
-		}
-
-		if (vplay)
-		{
-			static clock_t t_pre = clock();
-
-			int next_frame = (i_crntframe + 1) % fileIO->getNumFrame();
-
-			if (fileIO->getTimestamp(next_frame) - fileIO->getTimestamp(i_crntframe) < float(clock() - t_pre) * play_speed)
+			for (i = 0; i < tracker->sm.size(); i++)
 			{
-				i_crntframe = next_frame;
-				t_pre = clock();
+				RodentTracker::SkeletonModelPos pos;
+				tracker->getModelPos(i, pos);
+				writeCenterInCsv(pos.hd, fp_online_result);
+				writeCenterInCsv(pos.n, fp_online_result);
+				writeCenterInCsv(pos.t, fp_online_result);
+				writeCenterInCsv(pos.hp, fp_online_result);
 			}
+			fprintf(fp_online_result, "\n");
+
+			rec_frame_cnt++;
+		}
+		
+		tracker->setPointCloud(pc_crntframe);
+		updateColorVideoFrame();
+		glutPostRedisplay();
+	}
+	else
+	{
+		if (preproc_finished)
+		{
+
+			if (i_preframe != i_crntframe)
+			{
+				readFrame(i_crntframe);
+				i_preframe = i_crntframe;
+
+				updateColorVideoFrame();
+			}
+
+			if (i_crntframe <= tracker_result.last_frame)
+			{
+				for (i = 0; i < tracker->sm.size(); i++) tracker->setModelPos(i, tracker_result.pos[i][i_crntframe]);
+			}
+
+			if (!vplay)
+			{
+				tracker->runSimStep();
+			}
+			else if (vplay && tracker_result.last_frame < i_crntframe)
+			{
+				tracker->runSimUntilSteadyState();
+
+				for (i = 0; i < tracker->sm.size(); i++)
+				{
+					tracker->getModelPos(i, tracker_result.pos[i][i_crntframe]);
+
+					tracker_result.sm_enabled[i][i_crntframe] = checkModelInRoi(i);
+				}
+				tracker_result.last_frame = i_crntframe;
+			}
+
+			if (vplay && !online_mode)
+			{
+				static clock_t t_pre = clock();
+
+				int next_frame = (i_crntframe + 1) % fileIO->getNumFrame();
+
+				if (fileIO->getTimestamp(next_frame) - fileIO->getTimestamp(i_crntframe) < float(clock() - t_pre) * play_speed)
+				{
+					i_crntframe = next_frame;
+					t_pre = clock();
+				}
+
+			}
+
+			// stop playing at the last frame
+			if (!online_mode && i_crntframe == fileIO->getNumFrame() - 1) vplay = false;
 
 		}
 
-		// stop playing at the last frame
-		if (i_crntframe == fileIO->getNumFrame() - 1) vplay = false;
-
+		if (vplay && disp_every_5th_frame && i_crntframe % 5 == 0) glutPostRedisplay();
+		else if (vplay && !disp_every_5th_frame) glutPostRedisplay();
+		else if (!vplay) glutPostRedisplay();
 	}
-
-	if (vplay && disp_every_5th_frame && i_crntframe % 5 == 0) glutPostRedisplay();
-	else if (vplay && !disp_every_5th_frame) glutPostRedisplay();
-	else if (!vplay) glutPostRedisplay();
 
 }
 
@@ -892,6 +1065,7 @@ void drawGUI()
 	static bool show_framerate_window = false;
 	static bool show_measurement_window = false;
 	static bool show_outlier_removal_filter_window = false;
+	static bool show_online_mode_control_window = online_mode;
 
 	ImGui_ImplGLUT_NewFrame(getAppScreenWidth(), getAppScreenHeight());
 
@@ -899,7 +1073,7 @@ void drawGUI()
 	{
 		if (ImGui::BeginMenu("File"))
 		{
-			if (ImGui::MenuItem("load result"))
+			if (!online_mode && ImGui::MenuItem("load result"))
 			{
 				if (fileIO->checkTrackingResultExist())
 				{
@@ -920,7 +1094,7 @@ void drawGUI()
 				}
 			}
 
-			if (ImGui::MenuItem("Save result"))
+			if (!online_mode && ImGui::MenuItem("Save result"))
 			{
 				fileIO->saveMetadata();
 				fileIO->saveTrackingParam(*tracker_param);
@@ -928,7 +1102,7 @@ void drawGUI()
 				fileIO->saveTrackingResult(tracker_result);
 			}
 
-			if (ImGui::MenuItem("Export result"))
+			if (!online_mode && ImGui::MenuItem("Export result"))
 			{
 				OPENFILENAMEA ofn;
 				char szFile[MAX_PATH];
@@ -953,7 +1127,7 @@ void drawGUI()
 				tracker_result.exportAsCsv(ts, ofn.lpstrFile);
 			}
 
-			ImGui::Separator();
+			if (!online_mode) ImGui::Separator();
 
 			if (ImGui::MenuItem("Import Params"))
 			{
@@ -1021,7 +1195,8 @@ void drawGUI()
 
 		if (ImGui::BeginMenu("Window"))
 		{
-			if (ImGui::MenuItem("Player", "", &show_player_window)) {}
+			if (!online_mode && ImGui::MenuItem("Player", "", &show_player_window)) {}
+			if (online_mode && ImGui::MenuItem("Online mode control", "", &show_online_mode_control_window)) {}
 			if (ImGui::MenuItem("Tracking tools", "", &show_tracking_tools_window)) {}
 			if (ImGui::MenuItem("Color video monitor", "", &show_colorvideo_monitor)) {}
 			if (ImGui::MenuItem("View setting", "", &show_view_setting_window)) {}
@@ -1059,7 +1234,7 @@ void drawGUI()
 		ImGui::EndMainMenuBar();
 	}
 
-	if (show_player_window)
+	if (!online_mode && show_player_window)
 	{
 		ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiSetCond_Once);
 		ImGui::Begin("Player", &show_player_window, ImGuiWindowFlags_AlwaysAutoResize);
@@ -1108,6 +1283,42 @@ void drawGUI()
 		if (i_crntframe >  fileIO->getNumFrame() - 1) i_crntframe = fileIO->getNumFrame() - 1;
 
 		ImGui::End();
+	}
+
+	if (online_mode && show_online_mode_control_window)
+	{
+		static char rec_session_name[256] = "untitled_session";
+
+		ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiSetCond_Once);
+		ImGui::Begin("Online Mode Control", &show_online_mode_control_window, ImGuiWindowFlags_AlwaysAutoResize);
+
+		if (!recording)
+		{
+			ImGui::InputText("Session name", rec_session_name, 256);
+
+			if (ImGui::Button("Start Recording##Online control"))
+			{
+				char dname[1024];
+				sprintf(dname, "data\\%s\\", rec_session_name);
+				fileIO->resetRecDir(dname, rec_session_name);
+				startRecording();
+			}
+		}
+		else
+		{
+			ImGui::PushStyleColor(ImGuiCol_FrameBg, ImColor(180, 0, 0));
+			char buf[256];
+			sprintf(buf, "REC - %s", rec_session_name);
+			ImGui::InputText("Session name", buf, 256);
+			ImGui::PopStyleColor();
+
+			if (ImGui::Button("Stop Recording##Online control"))
+			{
+				stopRecording();
+			}
+		}
+		ImGui::End();
+
 	}
 
 	if (show_modeledit_window)
@@ -1523,6 +1734,14 @@ void drawGUI()
 		if (ImGui::SliderInt("Min Neighbors##OR Filt", &tracker_param->orf_meanK, 1, 200)) { readFrame(i_crntframe); }
 		if (ImGui::SliderFloat("Radius (m)##OR Filt", &tracker_param->orf_thresh, 0.001, 1.0, "%.3f", 3.0)) { readFrame(i_crntframe); }
 	
+		ImGui::End();
+	}
+
+	if (online_mode)
+	{
+		ImGui::SetNextWindowPos(ImVec2(5, getAppScreenHeight() - 40));
+		ImGui::Begin("Online Mode Indication", nullptr, ImVec2(0, 0), 0.3f, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+		ImGui::Text("ONLINE MODE");
 		ImGui::End();
 	}
 

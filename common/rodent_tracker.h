@@ -204,6 +204,7 @@ public:
 
 	void setPointCloud(pcl::PointCloud<pcl::PointXYZRGBNormal> & pc);
 
+	void togglePointForce(int animal_id, bool state);
 	
 private:
 
@@ -219,6 +220,8 @@ private:
 
 	pcl::PointCloud<pcl::PointXYZRGBNormal> pc_to_fit;
 	std::vector<PointAttribution> p_attribution;
+
+	std::vector<bool> point_force_active;
 
 	void initialize();
 	void resetSkeletonModel();
@@ -255,7 +258,9 @@ public:
 
 private:
 
-	void saveTransform(btTransform & transform, FILE * fp);
-	void loadTransform(btTransform & transform, FILE * fp);
-	void writeCenterInCsv(btTransform & transform, FILE * fp);
 };
+
+// convenience functions
+void saveTransform(btTransform & transform, FILE * fp);
+void loadTransform(btTransform & transform, FILE * fp);
+void writeCenterInCsv(btTransform & transform, FILE * fp);

@@ -29,9 +29,11 @@ public:
 	MyMetadata metadata;
 
 	MyFileIO();
-	MyFileIO(const std::string & metadatafilepath);														// for opening existing data
-	MyFileIO(const std::string & path_data_dir, const std::string & name_session, MyMetadata & md);		// for recording new data
+	MyFileIO(const std::string & metadatafilepath, bool online = false);														// for opening existing data
+	MyFileIO(const std::string & path_data_dir, const std::string & name_session, MyMetadata & md);		// for recording new data		
 	~MyFileIO();
+
+	void resetRecDir(const std::string & path_data_dir, const std::string & name_session);
 
 	void saveMetadata();
 	void loadMetadata();
@@ -62,7 +64,8 @@ public:
 	void start2DVideoWriter(int camera_id, int w = 320, int h = 240, int fourcc = CV_FOURCC('X', 'V', 'I', 'D'));
 	void write2DVideoFrame(cv::Mat color_frame, int camera_id);
 
-	//void preprocessFrame(std::vector<pcl::PointCloud<pcl::PointXYZRGB>> & pc_input, pcl::PointCloud<pcl::PointXYZRGBNormal> & pc_merged, float gridsize, std::vector<bool> cam_enable = std::vector<bool>());
+	void startMergedPcWriter();
+	void writeMergedPcFrame(pcl::PointCloud<pcl::PointXYZRGBNormal> &pc_merged, double timestamp);
 	void preprosessData(float gridsize, std::vector<bool> cam_enable = std::vector<bool>());
 
 	void startRgbdReader();
@@ -81,6 +84,8 @@ public:
 
 	void start2DVideoReader();
 	void read2DVideoFrame(cv::Mat & vid_frame, int camera_id, size_t frame_id);
+
+	double updateOnlineFrame();
 
 	std::string getDataPathHeader() { return data_dir + session_name;  };
 
@@ -129,6 +134,9 @@ private:
 
 	std::vector<RsCameraIntrinsics> camera_intrinsics;
 	std::vector<INuiCoordinateMapper*> camera_intrinsics_k;
+
+	bool online_mode;
+	std::shared_ptr<MyCapture> cap;
 
 	static void saveRsIntrinsic(rs::intrinsics & intrin, FILE *fo);
 	static void loadRsIntrinsic(rs::intrinsics & intrin, FILE *fi);

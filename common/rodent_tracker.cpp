@@ -217,6 +217,11 @@ void RodentTracker::setPointCloud(pcl::PointCloud<pcl::PointXYZRGBNormal>& pc)
 	pc_to_fit = pc;
 }
 
+void RodentTracker::togglePointForce(int animal_id, bool state)
+{
+	point_force_active[animal_id] = state;
+}
+
 void RodentTracker::applyForce()
 {
 	int id;
@@ -247,27 +252,29 @@ void RodentTracker::applyForce()
 		sm[id].body_hp->setLinearVelocity(btVector3(0, 0, 0));
 
 		
-		//apply Attraction force (f_a)
+		if (point_force_active[id])
+		{
+			//apply Attraction force (f_a)
 
-		R2 = powf(sm[id].params.hd_ratt, 2.0); 
-		v = sm[id].body_hd->getCenterOfMassPosition();
-		sm[id].body_hd->applyCentralImpulse(params->f_att * calcAttraction(R2, v, id, 1));
-		
-		R2 = powf(sm[id].params.n_ratt2, 2.0);
-		v = sm[id].body_n->getCenterOfMassPosition();
-		sm[id].body_n->applyCentralImpulse(params->f_att * calcAttraction(R2, v, id, -1));
+			R2 = powf(sm[id].params.hd_ratt, 2.0);
+			v = sm[id].body_hd->getCenterOfMassPosition();
+			sm[id].body_hd->applyCentralImpulse(params->f_att * calcAttraction(R2, v, id, 1));
 
-		R2 = 1.0e10;	// infinity
-		v = sm[id].body_t->getCenterOfMassPosition();
-		sm[id].body_t->applyCentralImpulse(params->f_att * calcAttraction(R2, v, id, -1));
+			R2 = powf(sm[id].params.n_ratt2, 2.0);
+			v = sm[id].body_n->getCenterOfMassPosition();
+			sm[id].body_n->applyCentralImpulse(params->f_att * calcAttraction(R2, v, id, -1));
 
-		R2 = powf(sm[id].params.hp_ratt, 2.0);
-		v = sm[id].body_hp->getCenterOfMassPosition();
-		sm[id].body_hp->applyCentralImpulse(params->f_att * calcAttraction(R2, v, id, 4));
+			R2 = 1.0e10;	// infinity
+			v = sm[id].body_t->getCenterOfMassPosition();
+			sm[id].body_t->applyCentralImpulse(params->f_att * calcAttraction(R2, v, id, -1));
 
+			R2 = powf(sm[id].params.hp_ratt, 2.0);
+			v = sm[id].body_hp->getCenterOfMassPosition();
+			sm[id].body_hp->applyCentralImpulse(params->f_att * calcAttraction(R2, v, id, 4));
 
-		// apply repulsion forces to hold the model inside surface (f_r)
-		applyRepulsion(id);
+			// apply repulsion forces to hold the model inside surface (f_r)
+			applyRepulsion(id);
+		}
 
 		// constraint III and IV
 		applyBalance(id);
@@ -563,6 +570,9 @@ void RodentTracker::initialize()
 	resetSkeletonModel();
 
 	physim->setGround(params->h_floor);
+
+	point_force_active.clear();
+	for (int i = 0; i < sm.size(); i++) point_force_active.push_back(true);
 }
 
 void RodentTracker::resetSkeletonModel()
@@ -830,7 +840,7 @@ void RodentTrackerResult::initialize(int num_animal, long num_frame)
 
 }
 
-void RodentTrackerResult::saveTransform(btTransform & transform, FILE * fp)
+void saveTransform(btTransform & transform, FILE * fp)
 {
 	btTransformFloatData data;
 
@@ -842,7 +852,7 @@ void RodentTrackerResult::saveTransform(btTransform & transform, FILE * fp)
 	fwrite(data.m_origin.m_floats, sizeof(float), 4, fp);
 }
 
-void RodentTrackerResult::loadTransform(btTransform & transform, FILE * fp)
+void loadTransform(btTransform & transform, FILE * fp)
 {
 	btTransformFloatData data;
 
@@ -854,7 +864,7 @@ void RodentTrackerResult::loadTransform(btTransform & transform, FILE * fp)
 	transform.deSerialize(data);
 }
 
-void RodentTrackerResult::writeCenterInCsv(btTransform & transform, FILE * fp)
+void writeCenterInCsv(btTransform & transform, FILE * fp)
 {
 	fprintf(fp, "%lf, %lf, %lf, ", transform.getOrigin().x(), transform.getOrigin().y(), transform.getOrigin().z());
 }
