@@ -414,6 +414,7 @@
   <ItemGroup>
     <ClCompile Include="..\common\app_common.cpp" />
     <ClCompile Include="..\common\my_capture.cpp" />
+    <ClCompile Include="..\common\my_capture_d400.cpp" />
     <ClCompile Include="..\common\my_capture_kinect1.cpp" />
     <ClCompile Include="..\common\my_capture_r200.cpp" />
     <ClCompile Include="..\common\my_file_io.cpp" />
@@ -429,6 +430,7 @@
   <ItemGroup>
     <ClInclude Include="..\common\app_common.h" />
     <ClInclude Include="..\common\my_capture.h" />
+    <ClInclude Include="..\common\my_capture_d400.h" />
     <ClInclude Include="..\common\my_capture_kinect1.h" />
     <ClInclude Include="..\common\my_capture_r200.h" />
     <ClInclude Include="..\common\my_dio.h" />

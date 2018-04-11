@@ -1,0 +1,242 @@
+#include "my_capture_d400.h"
+
+#include <iostream>
+#include <boost/thread.hpp>
+#include <boost/bind.hpp>
+
+MyCaptureD400::MyCaptureD400(int c_w, int c_h, bool disable_depth)
+{
+	int i;
+
+	depth_off = disable_depth;
+
+	num_camera = rs_ctx.get_device_count();
+
+	std::cout << "number of cameras: " << num_camera << std::endl;
+
+	cameras.clear();
+	for (i = 0; i < num_camera; i++)
+	{
+		Camera c;
+
+		c.dev = rs_ctx.get_device(i);
+		c.pc.clear();
+
+		cameras.push_back(c);
+	}
+
+	for (auto & c : cameras)
+	{
+		c.dev->enable_stream(rs::stream::color, c_w, c_h, rs::format::bgr8, 30);
+		if (!depth_off) c.dev->enable_stream(rs::stream::depth, 320, 240, rs::format::z16, 30);
+
+		c.dev->start();
+	}
+
+	pc_filter_setting.color_filt_on = false;
+	pc_filter_setting.outlier_removal_on = false;
+}
+
+void MyCaptureD400::getNextFrames()
+{
+	boost::thread_group thr_grp;
+
+	for (auto & c : cameras)
+	{
+		thr_grp.create_thread(boost::bind(&MyCaptureD400::updateFrame, this, boost::ref(c)));
+	}
+
+	thr_grp.join_all();
+}
+
+void MyCaptureD400::updateFrame(Camera & c)
+{
+	rs::intrinsics depth_intrin;
+	if (!depth_off) depth_intrin = c.dev->get_stream_intrinsics(rs::stream::depth);
+	rs::intrinsics color_intrin = c.dev->get_stream_intrinsics(rs::stream::color);
+
+	c.dev->wait_for_frames();
+	if (!depth_off) c.timestamp = c.dev->get_frame_timestamp(rs::stream::depth);
+	else c.timestamp = c.dev->get_frame_timestamp(rs::stream::color);
+	c.color_frame = cv::Mat(cv::Size(color_intrin.width, color_intrin.height), CV_8UC3, (void*)c.dev->get_frame_data(rs::stream::color), cv::Mat::AUTO_STEP);
+	if (!depth_off) c.depth_frame = cv::Mat(cv::Size(depth_intrin.width, depth_intrin.height), CV_16UC1, (void*)c.dev->get_frame_data(rs::stream::depth), cv::Mat::AUTO_STEP);
+}
+
+void MyCaptureD400::getFrameData(cv::Mat & frame, int camera_id, std::string frame_type)
+{
+	if (frame_type == "DEPTH")
+	{
+		frame = cameras[camera_id].depth_frame.clone();
+	}
+	else if (frame_type == "COLOR")
+	{
+		frame = cameras[camera_id].color_frame.clone();
+	}
+}
+
+void MyCaptureD400::getPointClouds()
+{
+	boost::thread_group thr_grp;
+
+	for (auto & c : cameras)
+	{
+		thr_grp.create_thread(boost::bind(&MyCaptureD400::updatePointCloud, this, boost::ref(c)));
+	}
+
+	thr_grp.join_all();
+}
+
+void MyCaptureD400::updatePointCloud(Camera & c)
+{
+	RsCameraIntrinsics2 intrinsics;
+
+	intrinsics.depth_intrin = c.dev->get_stream_intrinsics(rs::stream::depth);
+	intrinsics.depth_to_color = c.dev->get_extrinsics(rs::stream::depth, rs::stream::color);
+	intrinsics.color_intrin = c.dev->get_stream_intrinsics(rs::stream::color);
+	intrinsics.scale = c.dev->get_depth_scale();
+
+	frame2PointCloud(c.color_frame, c.depth_frame, c.pc, intrinsics, pc_filter_setting);
+}
+
+void MyCaptureD400::frame2PointCloud(const cv::Mat & color_frame, const cv::Mat & depth_frame, pcl::PointCloud<pcl::PointXYZRGB>& pc, const RsCameraIntrinsics2 & intrinsics, const PointCloudFilterSetting & filter_setting)
+{
+	cv::Mat hsv_frame, detection_frame;
+	if (filter_setting.color_filt_on) // pre processing for color filtering; finding pixels within the range in HSV color space
+	{
+		cv::cvtColor(color_frame, hsv_frame, cv::COLOR_BGR2HSV);
+		cv::inRange(hsv_frame, filter_setting.color_filt_hsv_min, filter_setting.color_filt_hsv_max, detection_frame);
+	}
+
+	pc.clear();
+	for (int dy = 0; dy < intrinsics.depth_intrin.height; ++dy)
+	{
+		for (int dx = 0; dx < intrinsics.depth_intrin.width; ++dx)
+		{
+			// Retrieve the 16-bit depth value and map it into a depth in meters
+			uint16_t depth_value = depth_frame.at<unsigned __int16>(dy, dx);
+
+			// Skip over pixels with a depth value of zero, which is used to indicate no data
+			if (depth_value == 0) continue;
+
+			float depth_in_meters = depth_value * intrinsics.scale;
+
+			// Map from pixel coordinates in the depth image to pixel coordinates in the color image
+			rs::float2 depth_pixel = { (float)dx, (float)dy };
+			rs::float3 depth_point = intrinsics.depth_intrin.deproject(depth_pixel, depth_in_meters);
+			rs::float3 color_point = intrinsics.depth_to_color.transform(depth_point);
+			rs::float2 color_pixel = intrinsics.color_intrin.project(color_point);
+
+
+			const int cx = (int)std::round(color_pixel.x), cy = (int)std::round(color_pixel.y);
+
+			if (cx < 0 || cy < 0 || cx >= intrinsics.color_intrin.width || cy >= intrinsics.color_intrin.height) continue;
+
+			if (filter_setting.color_filt_on && detection_frame.at<unsigned char>(cy, cx) == 0) continue;
+
+			pcl::PointXYZRGB p;
+
+			// Use the color from the nearest color pixel
+			auto clr = color_frame.at<cv::Vec3b>(cy, cx);
+			p.r = clr[2]; p.g = clr[1]; p.b = clr[0];
+
+			// Emit a vertex at the 3D location of this depth pixel
+			p.x = -depth_point.x;
+			p.y = -depth_point.y;
+			p.z = depth_point.z;
+
+			pc.push_back(p);
+		}
+	}
+
+	if (filter_setting.outlier_removal_on)
+	{
+		removeNoiseFromThresholdedPc(pc, filter_setting.outlier_filt_meanK, filter_setting.outlier_filt_thresh);
+	}
+}
+
+void MyCaptureD400::getPointCloudData(pcl::PointCloud<pcl::PointXYZRGB>& pc, int camera_id)
+{
+	pc = cameras[camera_id].pc;
+}
+
+void MyCaptureD400::getCameraIntrinsics(RsCameraIntrinsics2 & ci, int camera_id)
+{
+	ci.color_intrin = cameras[camera_id].dev->get_stream_intrinsics(rs::stream::color);
+	ci.depth_intrin = cameras[camera_id].dev->get_stream_intrinsics(rs::stream::depth);
+
+	ci.depth_to_color = cameras[camera_id].dev->get_extrinsics(rs::stream::depth, rs::stream::color);
+	ci.scale = cameras[camera_id].dev->get_depth_scale();
+}
+
+void MyCaptureD400::getColorCameraSettings(MyColorCameraSettings & cs, int camera_id)
+{
+	Camera & c = cameras[camera_id];
+
+	c.dev->get_option_range(rs::option::color_gain, cs.gain.min, cs.gain.max, cs.gain.step);
+	c.dev->get_option_range(rs::option::color_exposure, cs.exposure.min, cs.exposure.max, cs.exposure.step);
+	c.dev->get_option_range(rs::option::color_contrast, cs.contrast.min, cs.contrast.max, cs.contrast.step);
+	c.dev->get_option_range(rs::option::color_brightness, cs.brightness.min, cs.brightness.max, cs.brightness.step);
+	c.dev->get_option_range(rs::option::color_gamma, cs.gamma.min, cs.gamma.max, cs.gamma.step);
+
+	cs.gain.value = c.dev->get_option(rs::option::color_gain);
+	cs.exposure.value = c.dev->get_option(rs::option::color_exposure);
+	cs.contrast.value = c.dev->get_option(rs::option::color_contrast);
+	cs.brightness.value = c.dev->get_option(rs::option::color_brightness);
+	cs.gamma.value = c.dev->get_option(rs::option::color_gamma);
+
+	cs.auto_exposure = static_cast<bool>(c.dev->get_option(rs::option::color_enable_auto_exposure));
+}
+
+void MyCaptureD400::setColorCameraSettings(MyColorCameraSettings & cs, int camera_id)
+{
+	Camera & c = cameras[camera_id];
+
+	bool flag_update_exposure = (cs.exposure.value != c.dev->get_option(rs::option::color_exposure));
+
+	c.dev->set_option(rs::option::color_gain, cs.gain.value);
+	c.dev->set_option(rs::option::color_contrast, cs.contrast.value);
+	c.dev->set_option(rs::option::color_brightness, cs.brightness.value);
+	c.dev->set_option(rs::option::color_gamma, cs.gamma.value);
+
+	if (flag_update_exposure) {
+		c.dev->set_option(rs::option::color_exposure, cs.exposure.value);
+		cs.auto_exposure = false;
+	}
+
+	bool flag_update_auto_exposure = (cs.auto_exposure != static_cast<bool>(c.dev->get_option(rs::option::color_enable_auto_exposure)));
+	if (flag_update_auto_exposure)
+	{
+		c.dev->set_option(rs::option::color_enable_auto_exposure, static_cast<bool>(cs.auto_exposure));
+	}
+	//reload color camera setting after setting (some parameters are rounded by R200 after setting)
+	getColorCameraSettings(cs, camera_id);
+}
+
+bool MyCaptureD400::getInfraredEmitter(int camera_id)
+{
+	Camera & c = cameras[camera_id];
+
+	return static_cast<bool>(c.dev->get_option(rs::option::r200_emitter_enabled));
+}
+
+void MyCaptureD400::setInfraredEmitter(bool emitter_on, int camera_id)
+{
+	Camera & c = cameras[camera_id];
+
+	c.dev->set_option(rs::option::r200_emitter_enabled, emitter_on);
+}
+
+void MyCaptureD400::setInfraredCamGain(double gain_value)
+{
+	for (auto c : cameras) c.dev->set_option(rs::option::r200_lr_gain, gain_value);
+}
+
+void MyCaptureD400::setColorFilter(PointCloudFilterSetting pcfs)
+{
+	pc_filter_setting = pcfs;
+}
+
+MyCaptureD400::~MyCaptureD400()
+{
+}
+
