@@ -3,6 +3,7 @@
 #include <string>
 #include "my_capture_kinect1.h"
 #include "my_capture_r200.h"
+#include "my_capture_d400.h"
 #include "my_metadata.h"
 #include "rodent_tracker.h"
 
@@ -53,6 +54,7 @@ public:
 
 	void saveCameraIntrinsics(std::shared_ptr<MyCapture> & cap);
 	void saveCameraIntrinsics(std::shared_ptr<MyCaptureR200> & cap);
+	void saveCameraIntrinsics(std::shared_ptr<MyCaptureD400> & cap);
 	void saveCameraIntrinsics(std::shared_ptr<MyCaptureKinect1> & cap);
 
 	void startRgbdWriter();
@@ -92,7 +94,10 @@ public:
 	void closeFiles();
 
 	void export2DVideoFromRGBD(int fourcc = CV_FOURCC('X', 'V', 'I', 'D'));
-	
+
+	static void saveCameraIntrinsics(RsCameraIntrinsics2 & ci, FILE *fo);
+	static void loadCameraIntrinsics(RsCameraIntrinsics2 & ci, FILE *fi);
+
 	static void saveCameraIntrinsics(RsCameraIntrinsics & ci, FILE *fo);
 	static void loadCameraIntrinsics(RsCameraIntrinsics & ci, FILE *fi);
 
@@ -133,6 +138,7 @@ private:
 	std::vector<std::shared_ptr<cv::VideoCapture>> cv_videocapture;
 
 	std::vector<RsCameraIntrinsics> camera_intrinsics;
+	std::vector<RsCameraIntrinsics2> camera_intrinsics2;
 	std::vector<INuiCoordinateMapper*> camera_intrinsics_k;
 
 	bool online_mode;
@@ -142,6 +148,11 @@ private:
 	static void loadRsIntrinsic(rs::intrinsics & intrin, FILE *fi);
 	static void saveRsExtrinsic(rs::extrinsics & extrin, FILE *fo);
 	static void loadRsExtrinsic(rs::extrinsics & extrin, FILE *fi);
+
+	static void saveRs2Intrinsic(rs2_intrinsics & intrin, FILE *fo);
+	static void loadRs2Intrinsic(rs2_intrinsics & intrin, FILE *fi);
+	static void saveRs2Extrinsic(rs2_extrinsics & extrin, FILE *fo);
+	static void loadRs2Extrinsic(rs2_extrinsics & extrin, FILE *fi);
 
 };
 

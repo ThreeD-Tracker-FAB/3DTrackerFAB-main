@@ -1,4 +1,5 @@
 #include "my_capture.h"
+#include "my_capture_d400.h"
 #include "my_capture_r200.h"
 #include "my_capture_kinect1.h"
 
@@ -13,7 +14,12 @@
 
 std::shared_ptr<MyCapture> MyCapture::create(const std::string & model_name)
 {
-	if (model_name == "R200")
+	if (model_name == "D400")
+	{
+		std::cout << "MyCapture::create - D400 is selected as the model (color: 848x480, 30 fps)" << std::endl;
+		return std::shared_ptr<MyCapture>(new MyCaptureD400(848, 480));
+	}
+	else if (model_name == "R200")
 	{
 		std::cout << "MyCapture::create - R200 is selected as the model (color:320x240 mode)" << std::endl;
 		return std::shared_ptr<MyCapture>(new MyCaptureR200(320,240));

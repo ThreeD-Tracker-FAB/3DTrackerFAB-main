@@ -224,10 +224,31 @@ void MyFileIO::check2DVideoExist(std::vector<bool> & vid_exist)
 
 void MyFileIO::saveCameraIntrinsics(std::shared_ptr<MyCapture> & cap)
 {
+	if (metadata.cam_model_name == "D400")
+		saveCameraIntrinsics(std::static_pointer_cast<MyCaptureD400>(cap));
 	if (metadata.cam_model_name == "R200" || metadata.cam_model_name == "R200_C640x480" || metadata.cam_model_name == "R200_C1920x1080")
 		saveCameraIntrinsics(std::static_pointer_cast<MyCaptureR200>(cap));
 	else if (metadata.cam_model_name == "Kinect1")
 		saveCameraIntrinsics(std::static_pointer_cast<MyCaptureKinect1>(cap));
+}
+
+void MyFileIO::saveCameraIntrinsics(std::shared_ptr<MyCaptureD400> & cap)
+{
+	std::string filepath;
+
+	for (int i = 0; i < metadata.num_camera; i++)
+	{
+		filepath = data_dir + session_name + ".camintrin." + std::to_string(i + 1) + ".bin";
+		FILE *fp = fopen(filepath.c_str(), "wb");
+
+		RsCameraIntrinsics2 ci;
+		cap->getCameraIntrinsics(ci, i);
+
+		saveCameraIntrinsics(ci, fp);
+
+		fclose(fp);
+
+	}
 }
 
 void MyFileIO::saveCameraIntrinsics(std::shared_ptr<MyCaptureR200> & cap)
@@ -560,12 +581,19 @@ void MyFileIO::startRgbdReader()
 
 	// load cameraintrinsics
 	camera_intrinsics.resize(metadata.num_camera);
+	camera_intrinsics2.resize(metadata.num_camera);
 	camera_intrinsics_k.resize(metadata.num_camera);
 
 	for (i = 0; i < metadata.num_camera; i++)
 	{
-
-		if (metadata.cam_model_name == "R200" || metadata.cam_model_name == "R200_C640x480" || metadata.cam_model_name == "R200_C1920x1080")
+		if (metadata.cam_model_name == "D400")
+		{
+			std::string filepath = getDataPathHeader() + ".camintrin." + std::to_string(i + 1) + ".bin";
+			FILE *fp = fopen(filepath.c_str(), "rb");
+			loadCameraIntrinsics(camera_intrinsics2[i], fp);
+			fclose(fp);
+		}
+		else if (metadata.cam_model_name == "R200" || metadata.cam_model_name == "R200_C640x480" || metadata.cam_model_name == "R200_C1920x1080")
 		{
 			std::string filepath = getDataPathHeader() + ".camintrin." + std::to_string(i + 1) + ".bin";
 			FILE *fp = fopen(filepath.c_str(), "rb");
@@ -597,7 +625,11 @@ void MyFileIO::rgbdFrame2PointCloud(const cv::Mat & color_frame, const cv::Mat &
 	fsetting.color_filt_on = false;
 	fsetting.outlier_removal_on = false;
 
-	if (metadata.cam_model_name == "R200" || metadata.cam_model_name == "R200_C640x480" || metadata.cam_model_name == "R200_C1920x1080")
+	if (metadata.cam_model_name == "D400")
+	{
+		MyCaptureD400::frame2PointCloud(color_frame, depth_frame, pc, camera_intrinsics2[camera_id], fsetting);
+	}
+	else if (metadata.cam_model_name == "R200" || metadata.cam_model_name == "R200_C640x480" || metadata.cam_model_name == "R200_C1920x1080")
 	{
 		MyCaptureR200::frame2PointCloud(color_frame, depth_frame, pc, camera_intrinsics[camera_id], fsetting);
 	}
@@ -849,6 +881,22 @@ void MyFileIO::export2DVideoFromRGBD(int fourcc)
 	
 	std::cout << " - finished." << std::endl;
 
+}
+
+void MyFileIO::saveCameraIntrinsics(RsCameraIntrinsics2 & ci, FILE *fo)
+{
+	saveRs2Intrinsic(ci.depth_intrin, fo);
+	saveRs2Extrinsic(ci.depth_to_color, fo);
+	saveRs2Intrinsic(ci.color_intrin, fo);
+	fwrite(&ci.scale, sizeof(float), 1, fo);
+}
+
+void MyFileIO::loadCameraIntrinsics(RsCameraIntrinsics2 & ci, FILE *fi)
+{
+	loadRs2Intrinsic(ci.depth_intrin, fi);
+	loadRs2Extrinsic(ci.depth_to_color, fi);
+	loadRs2Intrinsic(ci.color_intrin, fi);
+	fread(&ci.scale, sizeof(float), 1, fi);
 }
 
 void MyFileIO::saveCameraIntrinsics(RsCameraIntrinsics & ci, FILE *fo)
@@ -1121,6 +1169,53 @@ void MyFileIO::saveRsExtrinsic(rs::extrinsics & extrin, FILE *fo)
 void MyFileIO::loadRsExtrinsic(rs::extrinsics & extrin, FILE *fi)
 {
 	rs_extrinsics & extrin2 = extrin;
+
+	fread(&extrin2.rotation, sizeof(float), 9, fi);
+	fread(&extrin2.translation, sizeof(float), 3, fi);
+
+}
+
+void MyFileIO::saveRs2Intrinsic(rs2_intrinsics & intrin, FILE *fo)
+{
+	rs2_intrinsics & intrin2 = intrin;
+
+	fwrite(&intrin2.width, sizeof(int), 1, fo);
+	fwrite(&intrin2.height, sizeof(int), 1, fo);
+	fwrite(&intrin2.ppx, sizeof(float), 1, fo);
+	fwrite(&intrin2.ppy, sizeof(float), 1, fo);
+	fwrite(&intrin2.fx, sizeof(float), 1, fo);
+	fwrite(&intrin2.fy, sizeof(float), 1, fo);
+	fwrite(&intrin2.model, sizeof(rs2_distortion), 1, fo);
+	fwrite(&intrin2.coeffs, sizeof(float), 5, fo);
+}
+
+void MyFileIO::loadRs2Intrinsic(rs2_intrinsics & intrin, FILE *fi)
+{
+	rs2_intrinsics & intrin2 = intrin;
+
+	fread(&intrin2.width, sizeof(int), 1, fi);
+	fread(&intrin2.height, sizeof(int), 1, fi);
+	fread(&intrin2.ppx, sizeof(float), 1, fi);
+	fread(&intrin2.ppy, sizeof(float), 1, fi);
+	fread(&intrin2.fx, sizeof(float), 1, fi);
+	fread(&intrin2.fy, sizeof(float), 1, fi);
+	fread(&intrin2.model, sizeof(rs2_distortion), 1, fi);
+	fread(&intrin2.coeffs, sizeof(float), 5, fi);
+
+}
+
+void MyFileIO::saveRs2Extrinsic(rs2_extrinsics & extrin, FILE *fo)
+{
+	rs2_extrinsics & extrin2 = extrin;
+
+	fwrite(&extrin2.rotation, sizeof(float), 9, fo);
+	fwrite(&extrin2.translation, sizeof(float), 3, fo);
+
+}
+
+void MyFileIO::loadRs2Extrinsic(rs2_extrinsics & extrin, FILE *fi)
+{
+	rs2_extrinsics & extrin2 = extrin;
 
 	fread(&extrin2.rotation, sizeof(float), 9, fi);
 	fread(&extrin2.translation, sizeof(float), 3, fi);

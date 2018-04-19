@@ -3,35 +3,49 @@
 #include <iostream>
 #include <boost/thread.hpp>
 #include <boost/bind.hpp>
+#include <librealsense2/rsutil.h>
 
 MyCaptureD400::MyCaptureD400(int c_w, int c_h, bool disable_depth)
 {
-	int i;
+	rs2::context rs_ctx;
+	const std::string platform_camera_name = "Platform Camera";
 
 	depth_off = disable_depth;
 
-	num_camera = rs_ctx.get_device_count();
+	cameras.clear();
+
+	for (auto&& dev : rs_ctx.query_devices()) 
+	{
+		if (dev.get_info(RS2_CAMERA_INFO_NAME) == platform_camera_name) continue;
+
+		rs2::pipeline pipe;
+		rs2::config cfg;
+
+		cfg.enable_device(dev.get_info(RS2_CAMERA_INFO_SERIAL_NUMBER));
+		cfg.enable_stream(RS2_STREAM_COLOR, c_w, c_h, RS2_FORMAT_BGR8, 30);
+		if (!depth_off) cfg.enable_stream(RS2_STREAM_DEPTH, 424, 240, RS2_FORMAT_Z16, 30);
+
+		rs2::pipeline_profile prof = pipe.start(cfg);
+
+		Camera cam;
+
+		cam.pipe = pipe;
+		cam.pc.clear();
+		cam.ci.color_intrin = prof.get_stream(RS2_STREAM_COLOR).as<rs2::video_stream_profile>().get_intrinsics();
+		if (!depth_off)
+		{
+			cam.ci.depth_intrin = prof.get_stream(RS2_STREAM_DEPTH).as<rs2::video_stream_profile>().get_intrinsics();
+			cam.ci.depth_to_color = prof.get_stream(RS2_STREAM_DEPTH).get_extrinsics_to(prof.get_stream(RS2_STREAM_COLOR));
+			cam.ci.scale = prof.get_device().first<rs2::depth_sensor>().get_depth_scale();
+		}
+
+
+		cameras.push_back(cam);
+	}
+
+	num_camera = cameras.size();
 
 	std::cout << "number of cameras: " << num_camera << std::endl;
-
-	cameras.clear();
-	for (i = 0; i < num_camera; i++)
-	{
-		Camera c;
-
-		c.dev = rs_ctx.get_device(i);
-		c.pc.clear();
-
-		cameras.push_back(c);
-	}
-
-	for (auto & c : cameras)
-	{
-		c.dev->enable_stream(rs::stream::color, c_w, c_h, rs::format::bgr8, 30);
-		if (!depth_off) c.dev->enable_stream(rs::stream::depth, 320, 240, rs::format::z16, 30);
-
-		c.dev->start();
-	}
 
 	pc_filter_setting.color_filt_on = false;
 	pc_filter_setting.outlier_removal_on = false;
@@ -51,15 +65,16 @@ void MyCaptureD400::getNextFrames()
 
 void MyCaptureD400::updateFrame(Camera & c)
 {
-	rs::intrinsics depth_intrin;
-	if (!depth_off) depth_intrin = c.dev->get_stream_intrinsics(rs::stream::depth);
-	rs::intrinsics color_intrin = c.dev->get_stream_intrinsics(rs::stream::color);
+	rs2::frameset fset = c.pipe.wait_for_frames();
 
-	c.dev->wait_for_frames();
-	if (!depth_off) c.timestamp = c.dev->get_frame_timestamp(rs::stream::depth);
-	else c.timestamp = c.dev->get_frame_timestamp(rs::stream::color);
-	c.color_frame = cv::Mat(cv::Size(color_intrin.width, color_intrin.height), CV_8UC3, (void*)c.dev->get_frame_data(rs::stream::color), cv::Mat::AUTO_STEP);
-	if (!depth_off) c.depth_frame = cv::Mat(cv::Size(depth_intrin.width, depth_intrin.height), CV_16UC1, (void*)c.dev->get_frame_data(rs::stream::depth), cv::Mat::AUTO_STEP);
+	rs2::frame color_frame, depth_frame;
+
+	color_frame = fset.get_color_frame();
+	if (!depth_off) depth_frame = fset.get_depth_frame();
+	c.timestamp = fset.get_timestamp();
+
+	c.color_frame = cv::Mat(cv::Size(c.ci.color_intrin.width, c.ci.color_intrin.height), CV_8UC3, (void*)color_frame.get_data(), cv::Mat::AUTO_STEP);
+	if (!depth_off) c.depth_frame = cv::Mat(cv::Size(c.ci.depth_intrin.width, c.ci.depth_intrin.height), CV_16UC1, (void*)depth_frame.get_data(), cv::Mat::AUTO_STEP);
 }
 
 void MyCaptureD400::getFrameData(cv::Mat & frame, int camera_id, std::string frame_type)
@@ -88,14 +103,16 @@ void MyCaptureD400::getPointClouds()
 
 void MyCaptureD400::updatePointCloud(Camera & c)
 {
-	RsCameraIntrinsics2 intrinsics;
+	frame2PointCloud(c.color_frame, c.depth_frame, c.pc, c.ci, pc_filter_setting);
 
+	/*
 	intrinsics.depth_intrin = c.dev->get_stream_intrinsics(rs::stream::depth);
 	intrinsics.depth_to_color = c.dev->get_extrinsics(rs::stream::depth, rs::stream::color);
 	intrinsics.color_intrin = c.dev->get_stream_intrinsics(rs::stream::color);
 	intrinsics.scale = c.dev->get_depth_scale();
 
 	frame2PointCloud(c.color_frame, c.depth_frame, c.pc, intrinsics, pc_filter_setting);
+	*/
 }
 
 void MyCaptureD400::frame2PointCloud(const cv::Mat & color_frame, const cv::Mat & depth_frame, pcl::PointCloud<pcl::PointXYZRGB>& pc, const RsCameraIntrinsics2 & intrinsics, const PointCloudFilterSetting & filter_setting)
@@ -108,6 +125,7 @@ void MyCaptureD400::frame2PointCloud(const cv::Mat & color_frame, const cv::Mat 
 	}
 
 	pc.clear();
+
 	for (int dy = 0; dy < intrinsics.depth_intrin.height; ++dy)
 	{
 		for (int dx = 0; dx < intrinsics.depth_intrin.width; ++dx)
@@ -118,16 +136,16 @@ void MyCaptureD400::frame2PointCloud(const cv::Mat & color_frame, const cv::Mat 
 			// Skip over pixels with a depth value of zero, which is used to indicate no data
 			if (depth_value == 0) continue;
 
-			float depth_in_meters = depth_value * intrinsics.scale;
+			float depth_in_meters = (float)depth_value * intrinsics.scale;
 
 			// Map from pixel coordinates in the depth image to pixel coordinates in the color image
-			rs::float2 depth_pixel = { (float)dx, (float)dy };
-			rs::float3 depth_point = intrinsics.depth_intrin.deproject(depth_pixel, depth_in_meters);
-			rs::float3 color_point = intrinsics.depth_to_color.transform(depth_point);
-			rs::float2 color_pixel = intrinsics.color_intrin.project(color_point);
+			float depth_pixel[2] = { (float)dx - 0.5f, (float)dy - 0.5f };
+			float depth_point[3], color_point[3], color_pixel[2];
+			rs2_deproject_pixel_to_point(depth_point, &intrinsics.depth_intrin, depth_pixel, depth_in_meters);
+			rs2_transform_point_to_point(color_point, &intrinsics.depth_to_color, depth_point);
+			rs2_project_point_to_pixel(color_pixel, &intrinsics.color_intrin, color_point);
 
-
-			const int cx = (int)std::round(color_pixel.x), cy = (int)std::round(color_pixel.y);
+			const int cx = static_cast<int>(color_pixel[0] + 0.5f), cy = static_cast<int>(color_pixel[1] + 0.5f);
 
 			if (cx < 0 || cy < 0 || cx >= intrinsics.color_intrin.width || cy >= intrinsics.color_intrin.height) continue;
 
@@ -140,9 +158,9 @@ void MyCaptureD400::frame2PointCloud(const cv::Mat & color_frame, const cv::Mat 
 			p.r = clr[2]; p.g = clr[1]; p.b = clr[0];
 
 			// Emit a vertex at the 3D location of this depth pixel
-			p.x = -depth_point.x;
-			p.y = -depth_point.y;
-			p.z = depth_point.z;
+			p.x = -depth_point[0];
+			p.y = -depth_point[1];
+			p.z = depth_point[2];
 
 			pc.push_back(p);
 		}
@@ -161,15 +179,12 @@ void MyCaptureD400::getPointCloudData(pcl::PointCloud<pcl::PointXYZRGB>& pc, int
 
 void MyCaptureD400::getCameraIntrinsics(RsCameraIntrinsics2 & ci, int camera_id)
 {
-	ci.color_intrin = cameras[camera_id].dev->get_stream_intrinsics(rs::stream::color);
-	ci.depth_intrin = cameras[camera_id].dev->get_stream_intrinsics(rs::stream::depth);
-
-	ci.depth_to_color = cameras[camera_id].dev->get_extrinsics(rs::stream::depth, rs::stream::color);
-	ci.scale = cameras[camera_id].dev->get_depth_scale();
+	ci = cameras[camera_id].ci;
 }
 
 void MyCaptureD400::getColorCameraSettings(MyColorCameraSettings & cs, int camera_id)
 {
+	/*
 	Camera & c = cameras[camera_id];
 
 	c.dev->get_option_range(rs::option::color_gain, cs.gain.min, cs.gain.max, cs.gain.step);
@@ -185,10 +200,12 @@ void MyCaptureD400::getColorCameraSettings(MyColorCameraSettings & cs, int camer
 	cs.gamma.value = c.dev->get_option(rs::option::color_gamma);
 
 	cs.auto_exposure = static_cast<bool>(c.dev->get_option(rs::option::color_enable_auto_exposure));
+	*/
 }
 
 void MyCaptureD400::setColorCameraSettings(MyColorCameraSettings & cs, int camera_id)
 {
+	/*
 	Camera & c = cameras[camera_id];
 
 	bool flag_update_exposure = (cs.exposure.value != c.dev->get_option(rs::option::color_exposure));
@@ -210,25 +227,29 @@ void MyCaptureD400::setColorCameraSettings(MyColorCameraSettings & cs, int camer
 	}
 	//reload color camera setting after setting (some parameters are rounded by R200 after setting)
 	getColorCameraSettings(cs, camera_id);
+	*/
 }
 
 bool MyCaptureD400::getInfraredEmitter(int camera_id)
 {
-	Camera & c = cameras[camera_id];
-
-	return static_cast<bool>(c.dev->get_option(rs::option::r200_emitter_enabled));
+	return cameras[camera_id].pipe.get_active_profile().get_device().first<rs2::depth_sensor>().get_option(RS2_OPTION_EMITTER_ENABLED) > 0;
 }
 
 void MyCaptureD400::setInfraredEmitter(bool emitter_on, int camera_id)
 {
-	Camera & c = cameras[camera_id];
-
-	c.dev->set_option(rs::option::r200_emitter_enabled, emitter_on);
+	if (emitter_on)
+	{
+		cameras[camera_id].pipe.get_active_profile().get_device().first<rs2::depth_sensor>().set_option(RS2_OPTION_EMITTER_ENABLED, 1.0f);
+	}
+	else
+	{
+		cameras[camera_id].pipe.get_active_profile().get_device().first<rs2::depth_sensor>().set_option(RS2_OPTION_EMITTER_ENABLED, 0.0f);
+	}
 }
 
 void MyCaptureD400::setInfraredCamGain(double gain_value)
 {
-	for (auto c : cameras) c.dev->set_option(rs::option::r200_lr_gain, gain_value);
+	for (auto c : cameras) c.pipe.get_active_profile().get_device().first<rs2::depth_sensor>().set_option(RS2_OPTION_LASER_POWER, gain_value);
 }
 
 void MyCaptureD400::setColorFilter(PointCloudFilterSetting pcfs)

@@ -3,7 +3,7 @@
 #pragma once
 
 #include "my_capture.h"
-#include <librealsense/rs.hpp>
+#include <librealsense2/rs.hpp>
 
 #include <opencv2/opencv.hpp>
 #include <pcl/point_types.h>
@@ -12,9 +12,9 @@
 
 struct RsCameraIntrinsics2
 {
-	rs::intrinsics depth_intrin;
-	rs::extrinsics depth_to_color;
-	rs::intrinsics color_intrin;
+	rs2_intrinsics depth_intrin;
+	rs2_extrinsics depth_to_color;
+	rs2_intrinsics color_intrin;
 	float scale;
 };
 
@@ -24,7 +24,10 @@ class MyCaptureD400 :
 private:
 	struct Camera
 	{
-		rs::device *dev;
+		rs2::pipeline pipe;
+
+		RsCameraIntrinsics2 ci;
+
 		pcl::PointCloud<pcl::PointXYZRGB> pc;
 		cv::Mat color_frame;
 		cv::Mat depth_frame;
@@ -65,8 +68,6 @@ public:
 
 
 private:
-
-	rs::context rs_ctx;
 
 	int num_camera;
 

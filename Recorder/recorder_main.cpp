@@ -41,8 +41,6 @@ bool frame_ttl_nextsig = false;
 
 #endif
 
-//#define BUILD_FOR_R200_C640x480	//replace BUILD_FOR_KINECT1, BUILD_FOR_R200, BUILD_FOR_R200_C640x480 for different cameras
-
 ///// END BUILD OPTIONS /////
 
 std::shared_ptr<MyCapture> cap;
@@ -77,6 +75,7 @@ MyFileIO::DataType recording_data_type = MyFileIO::DATA_TYPE_RGBD;
 MyGlTexture tex_camera_monitor;
 int monitor_camera_id = 0;
 bool monitor_depth = false;
+cv::Size color_frame_size;
 
 float disp_point_size = 3.0;
 
@@ -300,7 +299,8 @@ void drawGUI()
 						metadata.rec_ir_emitter[i] = cap->getInfraredEmitter(i);
 					}
 
-					cap->setInfraredCamGain(100 + 100 * metadata.rec_ir_gain);
+					if (metadata.cam_model_name == "D400") cap->setInfraredCamGain(30 + 40 * metadata.rec_ir_gain);
+					else cap->setInfraredCamGain(100 + 100 * metadata.rec_ir_gain);
 
 				}
 				if (ImGui::MenuItem("Save config", "")) { metadata.saveFile("default_setting.xml"); }
@@ -381,15 +381,20 @@ void drawGUI()
 			}
 
 			static int sel_res = 0;
-			const char* res[] = { "640 x 480", "480 x 360", "320 x 240"};
-			if (metadata.rec_2d_vid_res[0] == 640) sel_res = 0;
-			else if (metadata.rec_2d_vid_res[0] == 480) sel_res = 1;
-			else if (metadata.rec_2d_vid_res[0] == 320) sel_res = 2;
+			char str_size1[20], str_size2[20], str_size3[20];
+			sprintf(str_size1, "%d x %d", color_frame_size.width, color_frame_size.height);
+			sprintf(str_size2, "%d x %d", color_frame_size.width*3/4, color_frame_size.height*3/4);
+			sprintf(str_size3, "%d x %d", color_frame_size.width/2, color_frame_size.height/2);
+
+			const char* res[] = { str_size1, str_size2, str_size3 };
+			if (metadata.rec_2d_vid_res[0] == color_frame_size.width) sel_res = 0;
+			else if (metadata.rec_2d_vid_res[0] == color_frame_size.width*3/4) sel_res = 1;
+			else if (metadata.rec_2d_vid_res[0] == color_frame_size.width/2) sel_res = 2;
 			if (ImGui::Combo("Resolution", &sel_res, res, 3))
 			{
-				if (sel_res == 0) { metadata.rec_2d_vid_res[0] = 640; metadata.rec_2d_vid_res[1] = 480; }
-				if (sel_res == 1) { metadata.rec_2d_vid_res[0] = 480; metadata.rec_2d_vid_res[1] = 360; }
-				if (sel_res == 2) { metadata.rec_2d_vid_res[0] = 320; metadata.rec_2d_vid_res[1] = 240; }
+				if (sel_res == 0) { metadata.rec_2d_vid_res[0] = color_frame_size.width; metadata.rec_2d_vid_res[1] = color_frame_size.height; }
+				if (sel_res == 1) { metadata.rec_2d_vid_res[0] = color_frame_size.width*3/4; metadata.rec_2d_vid_res[1] = color_frame_size.height*3/4; }
+				if (sel_res == 2) { metadata.rec_2d_vid_res[0] = color_frame_size.width/2; metadata.rec_2d_vid_res[1] = color_frame_size.height/2; }
 			}
 
 			ImGui::Separator();
@@ -431,7 +436,7 @@ void drawGUI()
 				if (ImGui::BeginPopupModal("Recording...", NULL, ImGuiWindowFlags_AlwaysAutoResize))
 				{
 					int w = 500;
-					ImGui::Image((void*)(GLuint)tex_camera_monitor.getTexId(), ImVec2(w, w * 3 / 4));
+					ImGui::Image((void*)(GLuint)tex_camera_monitor.getTexId(), ImVec2(w, w * color_frame_size.height / color_frame_size.width));
 
 					ImGui::Text("Camera:"); ImGui::SameLine();
 
@@ -470,7 +475,7 @@ void drawGUI()
 		{
 			static int selected_camera = 0;
 
-			ImGui::SetNextWindowSize(ImVec2(300, 0), ImGuiSetCond_Once);
+			ImGui::SetNextWindowSize(ImVec2(350, 0), ImGuiSetCond_Once);
 			ImGui::Begin("Camera Setting Window", &show_camera_setting_window);
 
 			char buf[256];
@@ -494,14 +499,30 @@ void drawGUI()
 
 			ImGui::Separator();
 
-			ImGui::Text("IR cam gain: ");
-			for (i = 0; i < 4; i++)
+			if (metadata.cam_model_name == "D400")
 			{
-				ImGui::SameLine();
-				sprintf(buf, "%3d##IR cam gain", 100+100*i);
-				if (ImGui::RadioButton(buf, &metadata.rec_ir_gain, i))
+				ImGui::Text("IR Laser Power: ");
+				for (i = 0; i < 4; i++)
 				{
-					cap->setInfraredCamGain(100 + 100 * i);
+					ImGui::SameLine();
+					sprintf(buf, "%3d##IR cam gain", 30 + 40 * i);
+					if (ImGui::RadioButton(buf, &metadata.rec_ir_gain, i))
+					{
+						cap->setInfraredCamGain(30 + 40 * i);
+					}
+				}
+			}
+			else
+			{
+				ImGui::Text("IR cam gain: ");
+				for (i = 0; i < 4; i++)
+				{
+					ImGui::SameLine();
+					sprintf(buf, "%3d##IR cam gain", 100 + 100 * i);
+					if (ImGui::RadioButton(buf, &metadata.rec_ir_gain, i))
+					{
+						cap->setInfraredCamGain(100 + 100 * i);
+					}
 				}
 			}
 
@@ -770,7 +791,7 @@ void drawGUI()
 			ImGui::Begin("Camera Monitor Window", &show_camera_monitor);
 
 			int w = ImGui::GetWindowWidth() - 15;
-			ImGui::Image((void*)(GLuint)tex_camera_monitor.getTexId(), ImVec2(w, w * 3 / 4));
+			ImGui::Image((void*)(GLuint)tex_camera_monitor.getTexId(), ImVec2(w, w * color_frame_size.height / color_frame_size.width));
 
 			ImGui::Text("Camera:"); ImGui::SameLine();
 
@@ -798,6 +819,11 @@ void initApp()
 {
 
 	//build different app for different cameras
+
+#ifdef BUILD_FOR_D400
+	metadata.cam_model_name = "D400";
+#endif
+
 #ifdef BUILD_FOR_R200_C640x480
 	metadata.cam_model_name = "R200_C640x480";
 #endif
@@ -840,6 +866,14 @@ void initApp()
 	sprintf(rec_session_name, "untitled_session");
 
 	tex_camera_monitor.init();
+
+	cv::Mat color_frame;
+	cap->getNextFrames();
+	cap->getFrameData(color_frame, 0, "COLOR");
+	color_frame_size = color_frame.size();
+
+	metadata.rec_2d_vid_res[0] = color_frame_size.width;
+	metadata.rec_2d_vid_res[1] = color_frame_size.height;
 }
 
 void loopApp()
@@ -908,9 +942,9 @@ void loopApp()
 		}
 		else
 		{
-			monitor_img = cv::Mat::zeros(cv::Size(640, 480), CV_8UC3);
-
 			cv::Mat frame;
+
+			monitor_img = cv::Mat::zeros(color_frame_size, CV_8UC3);
 
 			int n = ceil(sqrt(cap->getNumCamera()));
 
