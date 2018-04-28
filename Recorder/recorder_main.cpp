@@ -36,8 +36,9 @@
 #ifdef BUILD_ENABLE_DIO
 
 #include "../common/my_dio.h"
-MyDIO frame_ttl;
+MyDIO ttl_dev;
 bool frame_ttl_nextsig = false;
+bool rec_trigger_by_ttl = false;
 
 #endif
 
@@ -62,6 +63,7 @@ bool show_camera_monitor = false;
 
 bool color_each_camera = false;
 bool recording = false;
+bool recording_pause = false;
 
 int calibration_mode = 0;
 
@@ -273,6 +275,7 @@ void startRecording(bool enable_overwrite_warning)
 
 #ifdef BUILD_ENABLE_DIO
 	frame_ttl_nextsig = true;
+	if (rec_trigger_by_ttl) recording_pause = true;
 #endif
 
 	ImGui::OpenPopup("Recording...");
@@ -282,7 +285,7 @@ void stopRecording()
 {
 
 #ifdef BUILD_ENABLE_DIO
-	frame_ttl.outTTL(false);
+	ttl_dev.outTTL(false);
 #endif
 
 	fileIO->closeFiles();
@@ -442,6 +445,10 @@ void drawGUI()
 					}
 				}
 
+				#ifdef BUILD_ENABLE_DIO
+				ImGui::Checkbox("Trigger Recording by TTL", &rec_trigger_by_ttl);
+				#endif
+
 				if (ImGui::BeginPopupModal("Overwrite?", NULL, ImGuiWindowFlags_AlwaysAutoResize))
 				{
 					bool overwrite = false;
@@ -478,8 +485,21 @@ void drawGUI()
 					ImGui::SameLine(); ImGui::RadioButton("All##RecPopup", &monitor_camera_id, -1);
 
 					char buf[256];
+					#ifdef BUILD_ENABLE_DIO
+					if (recording_pause)
+					{
+						sprintf(buf, "WAITNG FOR TTL INPUT TO START...");
+						ImGui::Text(buf);
+					}
+					else
+					{
+						sprintf(buf, "Time elapsed:  %7.2f sec", (float)(clock() - rec_t0) / 1000.0);
+						ImGui::Text(buf);
+					}
+					#else
 					sprintf(buf, "Time elapsed:  %7.2f sec", (float)(clock() - rec_t0) / 1000.0);
 					ImGui::Text(buf);
+					#endif
 
 					ImGui::Separator();
 
@@ -907,9 +927,27 @@ void loopApp()
 {
 
 #ifdef BUILD_ENABLE_DIO
-	if (recording)
+	if (rec_trigger_by_ttl)
 	{
-		frame_ttl.outTTL(frame_ttl_nextsig);
+		if (recording_pause)
+		{
+			if (ttl_dev.readInput(0))	// check start ttl trigger
+			{
+				recording_pause = false;
+				rec_t0 = clock();
+			}
+		}
+		else if (recording)
+		{
+			if (ttl_dev.readInput(1))	// check stop ttl trigger
+			{
+				stopRecording();
+			}
+		}
+	}
+	if (recording && !recording_pause)
+	{
+		ttl_dev.outTTL(frame_ttl_nextsig);
 		frame_ttl_nextsig = !frame_ttl_nextsig;
 	}
 #endif
@@ -931,7 +969,7 @@ void loopApp()
 		cap->getFrameData(depth, i, "DEPTH");
 		ts = cap->getFrameTimestamp(i);
 
-		if (recording)
+		if (recording && !recording_pause)
 		{
 			if (recording_data_type == MyFileIO::DATA_TYPE_RGBD)
 			{
