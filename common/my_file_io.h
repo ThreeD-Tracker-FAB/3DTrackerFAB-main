@@ -19,6 +19,7 @@ public:
 		DATA_TYPE_RGBD = 0,
 		DATA_TYPE_PC = 1,
 		DATA_TYPE_MERGED_PC = 2,
+		DATA_TYPE_BAG = 3,
 	};
 
 	struct FrameIndex

@@ -172,6 +172,45 @@ void MyCaptureD400::frame2PointCloud(const cv::Mat & color_frame, const cv::Mat 
 	}
 }
 
+void MyCaptureD400::startBagRecording(const std::string & path_data_dir, const std::string & name_session)
+{
+	for (int i = 0; i < num_camera; i++)
+	{
+		std::string s_num = cameras[i].pipe.get_active_profile().get_device().get_info(RS2_CAMERA_INFO_SERIAL_NUMBER);
+		
+		cameras[i].pipe.stop();
+
+		rs2::config cfg;
+
+		cfg.enable_device(s_num);
+		cfg.enable_stream(RS2_STREAM_COLOR, 848, 480, RS2_FORMAT_BGR8, 30);
+		if (!depth_off) cfg.enable_stream(RS2_STREAM_DEPTH, 848, 480, RS2_FORMAT_Z16, 30);
+		
+		cfg.enable_record_to_file(path_data_dir + name_session + ".rosbag." + std::to_string(i+1) + ".bag");
+
+		cameras[i].pipe.start(cfg);
+	}
+}
+
+void MyCaptureD400::stopBagRecording()
+{
+	for (int i = 0; i < num_camera; i++)
+	{
+		std::string s_num = cameras[i].pipe.get_active_profile().get_device().get_info(RS2_CAMERA_INFO_SERIAL_NUMBER);
+
+		cameras[i].pipe.stop();
+
+		rs2::config cfg;
+
+		cfg.enable_device(s_num);
+		//!! resolution should be original value !!
+		cfg.enable_stream(RS2_STREAM_COLOR, 848, 480, RS2_FORMAT_BGR8, 30);
+		if (!depth_off) cfg.enable_stream(RS2_STREAM_DEPTH, 424, 240, RS2_FORMAT_Z16, 30);
+
+		cameras[i].pipe.start(cfg);
+	}
+}
+
 void MyCaptureD400::getPointCloudData(pcl::PointCloud<pcl::PointXYZRGB>& pc, int camera_id)
 {
 	pc = cameras[camera_id].pc;

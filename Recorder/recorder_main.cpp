@@ -247,14 +247,26 @@ void startRecording(bool enable_overwrite_warning)
 
 	fileIO = std::make_shared<MyFileIO>(dname, rec_session_name, metadata);
 	fileIO->saveMetadata();
+	
 	fileIO->saveCameraIntrinsics(cap);
 
 	recording = true;
 
 	rec_t0 = clock(); 
 
-	if (recording_data_type == MyFileIO::DATA_TYPE_RGBD) fileIO->startRgbdWriter();
-	else if (recording_data_type == MyFileIO::DATA_TYPE_PC) fileIO->startPcWriter();
+	if (recording_data_type == MyFileIO::DATA_TYPE_RGBD)
+	{
+		fileIO->startRgbdWriter();
+	}
+	else if (recording_data_type == MyFileIO::DATA_TYPE_PC)
+	{
+		fileIO->startPcWriter();
+	}
+	else if (recording_data_type == MyFileIO::DATA_TYPE_BAG)
+	{
+		std::shared_ptr<MyCaptureD400> cap_d400 = std::static_pointer_cast<MyCaptureD400>(cap);
+		cap_d400->startBagRecording(dname, rec_session_name);
+	}
 
 	for (i = 0; i < metadata.num_camera; i++) if (metadata.rec_save_2d_vid[i]) fileIO->start2DVideoWriter(i, metadata.rec_2d_vid_res[0], metadata.rec_2d_vid_res[1]);
 
@@ -274,6 +286,12 @@ void stopRecording()
 #endif
 
 	fileIO->closeFiles();
+
+	if (recording_data_type == MyFileIO::DATA_TYPE_BAG)
+	{
+		std::shared_ptr<MyCaptureD400> cap_d400 = std::static_pointer_cast<MyCaptureD400>(cap);
+		cap_d400->stopBagRecording();
+	}
 
 	recording = false;
 }
@@ -413,6 +431,15 @@ void drawGUI()
 				{
 					recording_data_type = MyFileIO::DATA_TYPE_PC;
 					startRecording(true);
+				}
+
+				if (metadata.cam_model_name == "D400")
+				{
+					if (ImGui::Button("Start Recording Bag"))
+					{
+						recording_data_type = MyFileIO::DATA_TYPE_BAG;
+						startRecording(true);
+					}
 				}
 
 				if (ImGui::BeginPopupModal("Overwrite?", NULL, ImGuiWindowFlags_AlwaysAutoResize))
