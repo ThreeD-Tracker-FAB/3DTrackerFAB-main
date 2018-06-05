@@ -78,8 +78,12 @@ MyGlTexture tex_camera_monitor;
 int monitor_camera_id = 0;
 bool monitor_depth = false;
 cv::Size color_frame_size;
+cv::Size color_frame_size_original;
 
 float disp_point_size = 3.0;
+
+int bag_rec_res_i = 0;
+int bag_rec_frate_i = 0;
 
 inline float rnd()
 {
@@ -266,8 +270,21 @@ void startRecording(bool enable_overwrite_warning)
 	}
 	else if (recording_data_type == MyFileIO::DATA_TYPE_BAG)
 	{
+		int w, h;
+
+		if (bag_rec_res_i == 0) { w = 424; h = 240;  }
+		else if (bag_rec_res_i == 1) { w = 848; h = 480; }
+		else if (bag_rec_res_i == 2) { w = 1280; h = 720; }
+
+		int frate;
+		if (bag_rec_frate_i == 0) frate = 30;
+		else if (bag_rec_frate_i == 1) frate = 60;
+
 		std::shared_ptr<MyCaptureD400> cap_d400 = std::static_pointer_cast<MyCaptureD400>(cap);
-		cap_d400->startBagRecording(dname, rec_session_name);
+		cap_d400->startBagRecording(dname, rec_session_name, w, h, frate);
+
+		color_frame_size_original = color_frame_size;
+		color_frame_size = cv::Size(w, h);
 	}
 
 	for (i = 0; i < metadata.num_camera; i++) if (metadata.rec_save_2d_vid[i]) fileIO->start2DVideoWriter(i, metadata.rec_2d_vid_res[0], metadata.rec_2d_vid_res[1]);
@@ -294,6 +311,8 @@ void stopRecording()
 	{
 		std::shared_ptr<MyCaptureD400> cap_d400 = std::static_pointer_cast<MyCaptureD400>(cap);
 		cap_d400->stopBagRecording();
+
+		color_frame_size = color_frame_size_original;
 	}
 
 	recording = false;
@@ -438,6 +457,14 @@ void drawGUI()
 
 				if (metadata.cam_model_name == "D400")
 				{
+					ImGui::Separator();
+
+					ImGui::Text("Rosbag file recording (only D400)");
+					const char* bres[] = { "424 x 240", "848 x 480", "1280 x 720" };
+					ImGui::Combo("Resolution##bag", &bag_rec_res_i, bres, 3);
+					const char* brate[] = { "30 fps", "60 fps" };
+					ImGui::Combo("Frame rate##bag", &bag_rec_frate_i, brate, 2);
+
 					if (ImGui::Button("Start Recording Bag"))
 					{
 						recording_data_type = MyFileIO::DATA_TYPE_BAG;

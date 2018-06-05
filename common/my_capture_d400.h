@@ -66,7 +66,7 @@ public:
 	static void frame2PointCloud(const cv::Mat & color_frame, const cv::Mat & depth_frame, pcl::PointCloud<pcl::PointXYZRGB> & pc,
 		const RsCameraIntrinsics2 & intrinsics, const PointCloudFilterSetting & filter_setting);
 
-	void startBagRecording(const std::string & path_data_dir, const std::string & name_session);
+	void startBagRecording(const std::string & path_data_dir, const std::string & name_session, int w = 848, int h = 480, int frate = 30);
 	void stopBagRecording();
 
 private:

@@ -22,7 +22,7 @@ MyCaptureD400::MyCaptureD400(int c_w, int c_h, bool disable_depth)
 		rs2::config cfg;
 
 		cfg.enable_device(dev.get_info(RS2_CAMERA_INFO_SERIAL_NUMBER));
-		cfg.enable_stream(RS2_STREAM_COLOR, c_w, c_h, RS2_FORMAT_BGR8, 30);
+		cfg.enable_stream(RS2_STREAM_COLOR, 848, 480, RS2_FORMAT_BGR8, 30);
 		if (!depth_off) cfg.enable_stream(RS2_STREAM_DEPTH, 424, 240, RS2_FORMAT_Z16, 30);
 
 		rs2::pipeline_profile prof = pipe.start(cfg);
@@ -172,7 +172,7 @@ void MyCaptureD400::frame2PointCloud(const cv::Mat & color_frame, const cv::Mat 
 	}
 }
 
-void MyCaptureD400::startBagRecording(const std::string & path_data_dir, const std::string & name_session)
+void MyCaptureD400::startBagRecording(const std::string & path_data_dir, const std::string & name_session, int w, int h, int frate)
 {
 	for (int i = 0; i < num_camera; i++)
 	{
@@ -183,12 +183,22 @@ void MyCaptureD400::startBagRecording(const std::string & path_data_dir, const s
 		rs2::config cfg;
 
 		cfg.enable_device(s_num);
-		cfg.enable_stream(RS2_STREAM_COLOR, 848, 480, RS2_FORMAT_BGR8, 30);
-		if (!depth_off) cfg.enable_stream(RS2_STREAM_DEPTH, 848, 480, RS2_FORMAT_Z16, 30);
+		cfg.enable_stream(RS2_STREAM_COLOR, w, h, RS2_FORMAT_BGR8, frate);
+		if (!depth_off) cfg.enable_stream(RS2_STREAM_DEPTH, w, h, RS2_FORMAT_Z16, frate);
 		
 		cfg.enable_record_to_file(path_data_dir + name_session + ".rosbag." + std::to_string(i+1) + ".bag");
 
 		cameras[i].pipe.start(cfg);
+
+		//update intrinsics
+		auto prof = cameras[i].pipe.get_active_profile();
+		cameras[i].ci.color_intrin = prof.get_stream(RS2_STREAM_COLOR).as<rs2::video_stream_profile>().get_intrinsics();
+		if (!depth_off)
+		{
+			cameras[i].ci.depth_intrin = prof.get_stream(RS2_STREAM_DEPTH).as<rs2::video_stream_profile>().get_intrinsics();
+			cameras[i].ci.depth_to_color = prof.get_stream(RS2_STREAM_DEPTH).get_extrinsics_to(prof.get_stream(RS2_STREAM_COLOR));
+			cameras[i].ci.scale = prof.get_device().first<rs2::depth_sensor>().get_depth_scale();
+		}
 	}
 }
 
@@ -208,6 +218,16 @@ void MyCaptureD400::stopBagRecording()
 		if (!depth_off) cfg.enable_stream(RS2_STREAM_DEPTH, 424, 240, RS2_FORMAT_Z16, 30);
 
 		cameras[i].pipe.start(cfg);
+
+		//update intrinsics
+		auto prof = cameras[i].pipe.get_active_profile();
+		cameras[i].ci.color_intrin = prof.get_stream(RS2_STREAM_COLOR).as<rs2::video_stream_profile>().get_intrinsics();
+		if (!depth_off)
+		{
+			cameras[i].ci.depth_intrin = prof.get_stream(RS2_STREAM_DEPTH).as<rs2::video_stream_profile>().get_intrinsics();
+			cameras[i].ci.depth_to_color = prof.get_stream(RS2_STREAM_DEPTH).get_extrinsics_to(prof.get_stream(RS2_STREAM_COLOR));
+			cameras[i].ci.scale = prof.get_device().first<rs2::depth_sensor>().get_depth_scale();
+		}
 	}
 }
 
