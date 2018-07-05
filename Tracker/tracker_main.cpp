@@ -33,6 +33,13 @@
 #include "../common/my_file_io.h"
 #include "../common/my_gl_texture.h"
 
+#ifdef BUILD_ENABLE_DIO
+
+#include "../common/my_dio.h"
+MyDIO ttl_dev;
+bool frame_ttl_nextsig = false;
+bool rec_trigger_by_ttl = false;
+#endif
 
 pcl::PointCloud<pcl::PointXYZRGBNormal> pc_crntframe;
 
@@ -76,7 +83,9 @@ double rec_ts0;
 std::string camsetting_filepath;
 double ts_online;
 FILE *fp_online_result;
+bool rec_firstframe_captured = false;
 
+char rec_session_name[256] = "untitled_session";
 
 void getColor(int animal_id, float *clr)
 {
@@ -646,37 +655,6 @@ int main(int argc, char **argv)
 
 	startApp(argc, argv, "Tracker");
 
-	// --- online mode test code start
-	/*MyFileIO fio(camsetting_filepath, true);
-
-	fio.start2DVideoReader();
-	fio.startMergedPcReader();
-
-	size_t t = clock();
-	while (1)
-	{
-		fio.updateOnlineFrame();
-
-		cv::Mat clr_frame;
-		fio.read2DVideoFrame(clr_frame, 0, 0);
-
-		cv::imshow("test", clr_frame);
-
-		pcl::PointCloud<pcl::PointXYZRGB> pc_xyzrgb;
-		pcl::PointCloud<pcl::Normal> pc_normal;
-
-		fio.readMergedPcFrame(pc_xyzrgb, pc_normal, 0);
-		
-		std::cout << 1000.0/double(clock()-t) << " fps" << std::endl;
-		t = clock();
-
-		int key = cv::waitKey(1);
-		if (key == 27) break;		//ESC
-	}
-	cv::destroyAllWindows();
-	*/
-	// --- online mode test code end
-
 	return 0;
 }
 
@@ -890,6 +868,11 @@ void startRecording()
 
 	startOnlineResultOutput();
 
+#ifdef BUILD_ENABLE_DIO
+	frame_ttl_nextsig = true;
+#endif
+
+	rec_firstframe_captured = false;
 	recording = true;
 	rec_frame_cnt = 0;
 	rec_ts0 = ts_online;
@@ -899,7 +882,6 @@ void stopRecording()
 {
 	fileIO->closeFiles();
 	fclose(fp_online_result);
-
 	recording = false;
 }
 
@@ -942,8 +924,26 @@ void loopApp()
 	if (online_mode)
 	{
 		double ts_prev = ts_online;
-
-		if (recording)
+#ifdef BUILD_ENABLE_DIO
+		if (rec_trigger_by_ttl)
+		{
+			if (ttl_dev.readInput(0))	// check start ttl trigger
+			{
+				char dname[1024];
+				sprintf(dname, "data\\%s\\", rec_session_name);
+				fileIO->resetRecDir(dname, rec_session_name);
+				startRecording();
+			}
+			else if (recording)
+			{
+				if (ttl_dev.readInput(1))	// check stop ttl trigger
+				{
+					stopRecording();
+				}
+			}
+		}
+#endif
+		if (recording && rec_firstframe_captured)
 		{
 			boost::thread_group thr_record;
 			thr_record.create_thread(boost::bind(&MyFileIO::writeMergedPcFrame, fileIO, pc_crntframe, ts_online));
@@ -961,8 +961,15 @@ void loopApp()
 		{
 			tracker->runSimStep();
 		}
-		
+#ifdef BUILD_ENABLE_DIO
 		if (recording)
+		{
+			ttl_dev.outTTL(frame_ttl_nextsig);
+			frame_ttl_nextsig = !frame_ttl_nextsig;
+		}
+#endif
+
+		if (recording && rec_firstframe_captured)
 		{
 			fprintf(fp_online_result, "%d, %lf, ", rec_frame_cnt, (ts_prev - rec_ts0) / 1000.0);
 
@@ -984,6 +991,8 @@ void loopApp()
 
 			rec_frame_cnt++;
 		}
+
+		if (recording && !rec_firstframe_captured) rec_firstframe_captured = true;
 		
 		tracker->setPointCloud(pc_crntframe);
 		updateColorVideoFrame();
@@ -1287,7 +1296,6 @@ void drawGUI()
 
 	if (online_mode && show_online_mode_control_window)
 	{
-		static char rec_session_name[256] = "untitled_session";
 
 		ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiSetCond_Once);
 		ImGui::Begin("Online Mode Control", &show_online_mode_control_window, ImGuiWindowFlags_AlwaysAutoResize);
@@ -1317,6 +1325,10 @@ void drawGUI()
 				stopRecording();
 			}
 		}
+
+#ifdef BUILD_ENABLE_DIO
+		ImGui::Checkbox("Trigger Recording by TTL", &rec_trigger_by_ttl);
+#endif
 		ImGui::End();
 
 	}

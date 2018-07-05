@@ -110,5 +110,8 @@
     <ClInclude Include="..\common\my_capture_d400.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
+    <ClInclude Include="..\common\my_dio.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
