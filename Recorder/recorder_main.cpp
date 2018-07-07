@@ -891,28 +891,18 @@ void drawGUI()
 
 void initApp()
 {
-
-	//build different app for different cameras
-
-#ifdef BUILD_FOR_D400
-	metadata.cam_model_name = "D400";
-#endif
-
-#ifdef BUILD_FOR_R200_C640x480
-	metadata.cam_model_name = "R200_C640x480";
-#endif
-
-#ifdef BUILD_FOR_R200_C1920x1080
-	metadata.cam_model_name = "R200_C1920x1080";
-#endif
-
-#ifdef BUILD_FOR_R200
-	metadata.cam_model_name = "R200";
-#endif
-
-#ifdef BUILD_FOR_KINECT1
-	metadata.cam_model_name = "Kinect1";
-#endif
+	if (checkD400Connection())
+	{
+		metadata.cam_model_name = "D400";
+	}
+	else if (checkR200Connection())
+	{
+		metadata.cam_model_name = "R200";
+	}
+	else if (checkKinect1Connection())
+	{
+		metadata.cam_model_name = "Kinect1";
+	}
 
 	cap = MyCapture::create(metadata.cam_model_name);
 

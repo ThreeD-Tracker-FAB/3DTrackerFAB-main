@@ -88,3 +88,6 @@ public:
 // convenience functions
 void removeNoiseFromThresholdedPc(pcl::PointCloud<pcl::PointXYZRGB> & pc, int meanK, float thresh); // removing outlier noise from point cloud
 void preprocessFrame(MyMetadata & metadata, std::vector<pcl::PointCloud<pcl::PointXYZRGB>> & pc_input, pcl::PointCloud<pcl::PointXYZRGBNormal> & pc_merged, float gridsize, std::vector<bool> cam_enable = std::vector<bool>());
+bool checkR200Connection(); // check R200 camera connections
+bool checkD400Connection(); // check D400 camera connections
+bool checkKinect1Connection(); // check Kinect1 camera connections

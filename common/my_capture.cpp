@@ -120,3 +120,37 @@ void preprocessFrame(MyMetadata & metadata, std::vector<pcl::PointCloud<pcl::Poi
 	vgf.setInputCloud(pc_merged.makeShared());
 	vgf.filter(pc_merged);
 }
+
+bool checkR200Connection()
+{
+	rs::context rs_ctx;
+
+	if (rs_ctx.get_device_count() > 0) return true;
+
+	return false;
+}
+
+bool checkD400Connection()
+{
+	rs2::context rs_ctx;
+	const std::string platform_camera_name = "Platform Camera";
+
+	for (auto&& dev : rs_ctx.query_devices())
+	{
+		if (dev.get_info(RS2_CAMERA_INFO_NAME) == platform_camera_name) continue;
+		else return true;
+	}
+
+	return false;
+}
+
+bool checkKinect1Connection()
+{
+	int num_camera = 0;
+
+	::NuiGetSensorCount(&num_camera);
+
+	if (num_camera > 0) return true;
+
+	return false;
+}
