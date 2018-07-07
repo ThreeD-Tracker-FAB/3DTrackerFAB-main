@@ -903,6 +903,11 @@ void initApp()
 	{
 		metadata.cam_model_name = "Kinect1";
 	}
+	else
+	{
+		printf("no camera is connected.\n");
+		exit(0);
+	}
 
 	cap = MyCapture::create(metadata.cam_model_name);
 
