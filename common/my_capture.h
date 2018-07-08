@@ -31,6 +31,20 @@ struct MyColorCameraSettings
 	SettingParam gamma;
 };
 
+struct StreamSetting
+{
+	bool depth_on;
+	int depth_res;
+
+	bool color_on;
+	int color_res;
+
+	bool ir_on;
+	int ir_res;
+
+	int fps;
+};
+
 struct PointCloudFilterSetting
 {
 	bool color_filt_on;
@@ -47,6 +61,12 @@ class MyCapture
 {
 public:
 	virtual ~MyCapture() {};
+
+	// start/stop stream
+	virtual void startStreams(StreamSetting ss) = 0;
+	virtual void stopStreams() = 0;
+
+	void restartStreams(StreamSetting ss) { stopStreams(); startStreams(ss); }
 
 	// acquire the next frames in all the cameras
 	virtual void getNextFrames() = 0;	
@@ -81,7 +101,7 @@ public:
 	virtual void setColorFilter(PointCloudFilterSetting pcfs) = 0;
 
 	// factory for different camera models
-	static std::shared_ptr<MyCapture> create(const std::string & model_name);
+	static std::shared_ptr<MyCapture> create(const std::string & model_name, StreamSetting ss = {true, 0, true, 0, false, 0, 0});
 
 };
 

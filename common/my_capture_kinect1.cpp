@@ -67,6 +67,14 @@ MyCaptureKinect1::~MyCaptureKinect1()
 	}
 }
 
+void MyCaptureKinect1::startStreams(StreamSetting ss)
+{
+}
+
+void MyCaptureKinect1::stopStreams()
+{
+}
+
 void MyCaptureKinect1::getNextFrames()
 {
 	boost::thread_group thr_grp;

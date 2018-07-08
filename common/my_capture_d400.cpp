@@ -39,7 +39,7 @@ MyCaptureD400::MyCaptureD400(int c_w, int c_h, bool disable_depth)
 			cam.ci.scale = prof.get_device().first<rs2::depth_sensor>().get_depth_scale();
 		}
 
-
+		
 		cameras.push_back(cam);
 	}
 
@@ -49,6 +49,14 @@ MyCaptureD400::MyCaptureD400(int c_w, int c_h, bool disable_depth)
 
 	pc_filter_setting.color_filt_on = false;
 	pc_filter_setting.outlier_removal_on = false;
+}
+
+void MyCaptureD400::startStreams(StreamSetting ss)
+{
+}
+
+void MyCaptureD400::stopStreams()
+{
 }
 
 void MyCaptureD400::getNextFrames()

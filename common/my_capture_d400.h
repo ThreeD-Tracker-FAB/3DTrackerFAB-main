@@ -39,6 +39,9 @@ public:
 	MyCaptureD400(int c_w, int c_h, bool disable_depth = false);
 	~MyCaptureD400();
 
+	void startStreams(StreamSetting ss);
+	void stopStreams();
+
 	void getNextFrames();
 	void getFrameData(cv::Mat &frame, int camera_id, std::string frame_type);
 	void getPointClouds();

@@ -31,8 +31,11 @@ private:
 
 public:
 
-	MyCaptureR200(int c_w, int c_h, bool disable_depth = false);
+	MyCaptureR200(StreamSetting ss);
 	~MyCaptureR200();
+
+	void startStreams(StreamSetting ss);
+	void stopStreams();
 
 	void getNextFrames();
 	void getFrameData(cv::Mat &frame, int camera_id, std::string frame_type);
@@ -71,8 +74,6 @@ private:
 	PointCloudFilterSetting pc_filter_setting;
 
 	std::vector<Camera> cameras;
-
-	bool depth_off;
 
 };
 

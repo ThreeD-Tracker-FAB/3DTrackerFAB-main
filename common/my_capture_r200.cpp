@@ -4,15 +4,23 @@
 #include <boost/thread.hpp>
 #include <boost/bind.hpp>
 
-MyCaptureR200::MyCaptureR200(int c_w, int c_h, bool disable_depth)
+MyCaptureR200::MyCaptureR200(StreamSetting ss)
 {
 	int i;
-
-	depth_off = disable_depth;
 
 	num_camera = rs_ctx.get_device_count();
 
 	std::cout << "number of cameras: " << num_camera << std::endl;
+
+	startStreams(ss);
+
+	pc_filter_setting.color_filt_on = false;
+	pc_filter_setting.outlier_removal_on = false;
+}
+
+void MyCaptureR200::startStreams(StreamSetting ss)
+{
+	int i;
 
 	cameras.clear();
 	for (i = 0; i < num_camera; i++)
@@ -27,14 +35,54 @@ MyCaptureR200::MyCaptureR200(int c_w, int c_h, bool disable_depth)
 
 	for (auto & c : cameras)
 	{
-		c.dev->enable_stream(rs::stream::color, c_w, c_h, rs::format::bgr8, 30);
-		if (!depth_off) c.dev->enable_stream(rs::stream::depth, 320, 240, rs::format::z16, 30);
+		int fps;
+		if (ss.fps == 1) fps = 60;
+		else fps = 30;
+
+		if (ss.depth_on)
+		{
+			int w, h;
+			if (ss.depth_res == 1) { w = 480; h = 360; }
+			else { w = 320; h = 240; }
+			c.dev->enable_stream(rs::stream::depth, w, h, rs::format::z16, fps);
+		}
+		else
+		{
+			c.dev->disable_stream(rs::stream::depth);
+		}
+		if (ss.color_on)
+		{
+			int w, h;
+			if (ss.color_res == 0) { w = 640; h = 480; }
+			else { w = 640; h = 480; }
+			c.dev->enable_stream(rs::stream::color, w, h, rs::format::bgr8, fps);
+		}
+		else
+		{
+			c.dev->disable_stream(rs::stream::color);
+		}
+		if (ss.ir_on)
+		{
+			int w, h;
+			if (ss.ir_res == 1) { w = 480; h = 360; }
+			else { w = 320; h = 240; }
+			c.dev->enable_stream(rs::stream::infrared, w, h, rs::format::y8, fps);
+		}
+		else
+		{
+			c.dev->disable_stream(rs::stream::infrared);
+		}
 
 		c.dev->start();
 	}
+}
 
-	pc_filter_setting.color_filt_on = false;
-	pc_filter_setting.outlier_removal_on = false;
+void MyCaptureR200::stopStreams()
+{
+	for (auto & c : cameras)
+	{
+		c.dev->stop();
+	}
 }
 
 void MyCaptureR200::getNextFrames()
@@ -52,14 +100,14 @@ void MyCaptureR200::getNextFrames()
 void MyCaptureR200::updateFrame(Camera & c)
 {
 	rs::intrinsics depth_intrin;
-	if (!depth_off) depth_intrin = c.dev->get_stream_intrinsics(rs::stream::depth);
+	depth_intrin = c.dev->get_stream_intrinsics(rs::stream::depth);
 	rs::intrinsics color_intrin = c.dev->get_stream_intrinsics(rs::stream::color);
 
 	c.dev->wait_for_frames();
-	if (!depth_off) c.timestamp = c.dev->get_frame_timestamp(rs::stream::depth);
-	else c.timestamp = c.dev->get_frame_timestamp(rs::stream::color);
+	c.timestamp = c.dev->get_frame_timestamp(rs::stream::depth);
+	c.timestamp = c.dev->get_frame_timestamp(rs::stream::color);
 	c.color_frame = cv::Mat(cv::Size(color_intrin.width, color_intrin.height), CV_8UC3, (void*)c.dev->get_frame_data(rs::stream::color), cv::Mat::AUTO_STEP);
-	if (!depth_off) c.depth_frame = cv::Mat(cv::Size(depth_intrin.width, depth_intrin.height), CV_16UC1, (void*)c.dev->get_frame_data(rs::stream::depth), cv::Mat::AUTO_STEP);
+	c.depth_frame = cv::Mat(cv::Size(depth_intrin.width, depth_intrin.height), CV_16UC1, (void*)c.dev->get_frame_data(rs::stream::depth), cv::Mat::AUTO_STEP);
 }
 
 void MyCaptureR200::getFrameData(cv::Mat & frame, int camera_id, std::string frame_type)

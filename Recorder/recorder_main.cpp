@@ -891,24 +891,6 @@ void drawGUI()
 
 void initApp()
 {
-	if (checkD400Connection())
-	{
-		metadata.cam_model_name = "D400";
-	}
-	else if (checkR200Connection())
-	{
-		metadata.cam_model_name = "R200";
-	}
-	else if (checkKinect1Connection())
-	{
-		metadata.cam_model_name = "Kinect1";
-	}
-	else
-	{
-		printf("no camera is connected.\n");
-		exit(0);
-	}
-
 	cap = MyCapture::create(metadata.cam_model_name);
 
 	if (cap == nullptr) std::cout << "unknown camera model" << std::endl;
@@ -1149,6 +1131,25 @@ void displayApp()
 
 int main(int argc, char **argv)
 {
+
+	if (checkD400Connection())
+	{
+		metadata.cam_model_name = "D400";
+	}
+	else if (checkR200Connection())
+	{
+		metadata.cam_model_name = "R200";
+	}
+	else if (checkKinect1Connection())
+	{
+		metadata.cam_model_name = "Kinect1";
+	}
+	else
+	{
+		printf("no camera is connected.\n");
+		exit(0);
+	}
+
 	startApp(argc, argv, "Recorder");
 
     return 0;

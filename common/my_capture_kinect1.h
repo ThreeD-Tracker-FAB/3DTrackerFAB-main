@@ -33,6 +33,9 @@ public:
 	MyCaptureKinect1();
 	~MyCaptureKinect1();
 
+	void startStreams(StreamSetting ss);
+	void stopStreams();
+
 	void getNextFrames();
 	void getPointClouds();
 

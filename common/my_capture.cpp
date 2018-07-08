@@ -12,27 +12,17 @@
 #include <pcl/filters/voxel_grid.h>
 
 
-std::shared_ptr<MyCapture> MyCapture::create(const std::string & model_name)
+std::shared_ptr<MyCapture> MyCapture::create(const std::string & model_name, StreamSetting ss)
 {
 	if (model_name == "D400")
 	{
-		std::cout << "MyCapture::create - D400 is selected as the model (color: 848x480, 30 fps)" << std::endl;
+		std::cout << "MyCapture::create - D400 is selected as the model" << std::endl;
 		return std::shared_ptr<MyCapture>(new MyCaptureD400(848, 480));
 	}
 	else if (model_name == "R200")
 	{
-		std::cout << "MyCapture::create - R200 is selected as the model (color:320x240 mode)" << std::endl;
-		return std::shared_ptr<MyCapture>(new MyCaptureR200(320,240));
-	}
-	else if (model_name == "R200_C640x480")
-	{
-		std::cout << "MyCapture::create - R200 is selected as the model (color:640x480 mode)" << std::endl;
-		return std::shared_ptr<MyCapture>(new MyCaptureR200(640, 480));
-	}
-	else if (model_name == "R200_C1920x1080")
-	{
-		std::cout << "MyCapture::create - R200 is selected as the model (color:1920x1080 mode)" << std::endl;
-		return std::shared_ptr<MyCapture>(new MyCaptureR200(1920, 1080));
+		std::cout << "MyCapture::create - R200 is selected as the model" << std::endl;
+		return std::shared_ptr<MyCapture>(new MyCaptureR200(ss));
 	}
 	else if (model_name == "Kinect1")
 	{
@@ -43,7 +33,6 @@ std::shared_ptr<MyCapture> MyCapture::create(const std::string & model_name)
 	std::cout << "MyCapture::create - Unknown camera model" << std::endl;
 	return std::shared_ptr<MyCapture>(nullptr);
 }
-
 
 void removeNoiseFromThresholdedPc(pcl::PointCloud<pcl::PointXYZRGB> & pc, int meanK, float thresh)
 {
