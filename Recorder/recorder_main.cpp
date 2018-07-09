@@ -322,7 +322,8 @@ void drawGUI()
 {
 	int i;
 
-    ImGui_ImplGLUT_NewFrame(getAppScreenWidth(), getAppScreenHeight());
+	ImGui_ImplOpenGL2_NewFrame();
+	ImGui_ImplFreeGLUT_NewFrame();
 
 	{
 		if (ImGui::BeginMainMenuBar())
@@ -381,9 +382,10 @@ void drawGUI()
 
 		if (show_framerate_window)
 		{
-			ImGui::SetNextWindowPos(ImVec2(getAppScreenWidth() - 130, getAppScreenHeight() - 40));
+			ImGuiIO& io = ImGui::GetIO();
+			ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - 130, io.DisplaySize.y - 40));
 			ImGui::Begin("Frame Rate Window", nullptr, ImVec2(0, 0), 0.3f, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
-			ImGui::Text("%.1f frames/sec", ImGui::GetIO().Framerate);
+			ImGui::Text("%.1f frames/sec", io.Framerate);
 			ImGui::End();
 		}
 
@@ -711,7 +713,7 @@ void drawGUI()
 					float g = ((ii / 4) % 2) * 0.7, b = ((ii / 2) % 2) * 0.7, r = (ii % 2) * 0.7;
 					ImColor col(r, g, b);
 
-					ImGui::PushStyleColor(ImGuiCol_CheckMark, col);
+					ImGui::PushStyleColor(ImGuiCol_CheckMark, (ImVec4)col);
 
 					ImGui::SameLine();
 					ImGui::RadioButton(buf, &metadata.ref_cam_id, i); 
@@ -843,7 +845,7 @@ void drawGUI()
 				int ii = (i + 1) % 8;
 				float g = ((ii / 4) % 2) * 0.7, b = ((ii / 2) % 2) * 0.7, r = (ii % 2) * 0.7;
 				ImColor col(r, g, b);
-				ImGui::PushStyleColor(ImGuiCol_CheckMark, col);
+				ImGui::PushStyleColor(ImGuiCol_CheckMark, (ImVec4)col);
 
 				bool chk = disp_camera_pc[i];
 				if (ImGui::Checkbox(buf, &chk)) { disp_camera_pc[i] = chk; }

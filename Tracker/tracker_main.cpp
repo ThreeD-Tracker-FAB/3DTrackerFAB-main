@@ -1076,7 +1076,8 @@ void drawGUI()
 	static bool show_outlier_removal_filter_window = false;
 	static bool show_online_mode_control_window = online_mode;
 
-	ImGui_ImplGLUT_NewFrame(getAppScreenWidth(), getAppScreenHeight());
+	ImGui_ImplOpenGL2_NewFrame();
+	ImGui_ImplFreeGLUT_NewFrame();
 
 	if (ImGui::BeginMainMenuBar())
 	{
@@ -1314,7 +1315,7 @@ void drawGUI()
 		}
 		else
 		{
-			ImGui::PushStyleColor(ImGuiCol_FrameBg, ImColor(180, 0, 0));
+			ImGui::PushStyleColor(ImGuiCol_FrameBg, (ImVec4)ImColor(180, 0, 0));
 			char buf[256];
 			sprintf(buf, "REC - %s", rec_session_name);
 			ImGui::InputText("Session name", buf, 256);
@@ -1546,7 +1547,7 @@ void drawGUI()
 			sprintf(label, "Model %d: ", i);
 			ImGui::Text(label);
 
-			ImGui::PushStyleColor(ImGuiCol_Button, ImColor::ImColor(clr[0] * 0.5f, clr[1] * 0.5f, clr[2] * 0.5f));
+			ImGui::PushStyleColor(ImGuiCol_Button, (ImVec4)ImColor::ImColor(clr[0] * 0.5f, clr[1] * 0.5f, clr[2] * 0.5f));
 
 			ImGui::SameLine();
 			sprintf(label, "Move##Tracking Tools %d", i);
@@ -1640,9 +1641,10 @@ void drawGUI()
 
 	if (show_framerate_window)
 	{
-		ImGui::SetNextWindowPos(ImVec2(getAppScreenWidth() - 130, getAppScreenHeight() - 40));
+		ImGuiIO& io = ImGui::GetIO();
+		ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - 130, io.DisplaySize.y - 40));
 		ImGui::Begin("Frame Rate Window", nullptr, ImVec2(0, 0), 0.3f, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
-		ImGui::Text("%.1f frames/sec", ImGui::GetIO().Framerate);
+		ImGui::Text("%.1f frames/sec", io.Framerate);
 		ImGui::End();
 	}
 
@@ -1751,7 +1753,7 @@ void drawGUI()
 
 	if (online_mode)
 	{
-		ImGui::SetNextWindowPos(ImVec2(5, getAppScreenHeight() - 40));
+		ImGui::SetNextWindowPos(ImVec2(5, ImGui::GetIO().DisplaySize.y -40));
 		ImGui::Begin("Online Mode Indication", nullptr, ImVec2(0, 0), 0.3f, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
 		ImGui::Text("ONLINE MODE");
 		ImGui::End();

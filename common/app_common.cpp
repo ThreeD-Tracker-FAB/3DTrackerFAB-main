@@ -9,12 +9,6 @@ GLfloat mvmat[16];
 unsigned int app_screen_width = 960;
 unsigned int app_screen_height = 720;
 
-int release_key = -1;
-
-unsigned int getAppScreenWidth() { return app_screen_width; }
-
-unsigned int getAppScreenHeight() { return app_screen_height; };
-
 void drawAxis(double length)
 {
 	GLUquadricObj *arrows[3];
@@ -136,9 +130,12 @@ void drawScene()
 	//app specific display func
 	displayApp();
 
+	ImGui_ImplOpenGL2_RenderDrawData(ImGui::GetDrawData());
+
 	glutSwapBuffers();
 }
 
+/*
 bool keyboardEvent(unsigned char nChar, int nX, int nY)
 {
 	ImGuiIO& io = ImGui::GetIO();
@@ -271,6 +268,16 @@ void mouseCallback(int button, int state, int x, int y)
 	}
 }
 
+void mouseMoveCallback(int x, int y)
+{
+	ImGuiIO& io = ImGui::GetIO();
+	io.MousePos = ImVec2((float)x, (float)y);
+
+	io.KeyCtrl = glutGetModifiers() & GLUT_ACTIVE_CTRL;
+	io.KeyShift = glutGetModifiers() & GLUT_ACTIVE_SHIFT;
+}
+
+*/
 void mouseDragCallback(int x, int y)
 {
 	ImGuiIO& io = ImGui::GetIO();
@@ -331,22 +338,14 @@ void mouseDragCallback(int x, int y)
 	io.KeyShift = glutGetModifiers() & GLUT_ACTIVE_SHIFT;
 }
 
-void mouseMoveCallback(int x, int y)
-{
-	ImGuiIO& io = ImGui::GetIO();
-	io.MousePos = ImVec2((float)x, (float)y);
-
-	io.KeyCtrl = glutGetModifiers() & GLUT_ACTIVE_CTRL;
-	io.KeyShift = glutGetModifiers() & GLUT_ACTIVE_SHIFT;
-}
-
 void mainLoop(void)
 {
 	//app specific loop func
 	loopApp();
 }
 
-void guiSetClipboardText(const char* text)
+
+static void guiSetClipboardText(void* user_data, const char* text)
 {
 	int    buf_size;
 	char  *buf;
@@ -359,7 +358,7 @@ void guiSetClipboardText(const char* text)
 	buf = (char *)GlobalLock(h_mem);
 	if (buf)
 	{
-		strcpy(buf, text);
+		strcpy_s(buf, buf_size, text);
 		GlobalUnlock(h_mem);
 		if (OpenClipboard(NULL))
 		{
@@ -370,7 +369,7 @@ void guiSetClipboardText(const char* text)
 	}
 }
 
-const char* guiGetClipboardText()
+static const char* guiGetClipboardText(void* user_data)
 {
 	HANDLE h_mem;
 	PTSTR str_clip;
@@ -390,6 +389,7 @@ const char* guiGetClipboardText()
 	return text.c_str();
 }
 
+
 void startApp(int argc, char **argv, const char* win_title)
 {
 	glutInit(&argc, argv);
@@ -401,6 +401,7 @@ void startApp(int argc, char **argv, const char* win_title)
 	glutCreateWindow(win_title);
 
 	// callback
+	/*
 	glutReshapeFunc(reshape);
 	glutKeyboardFunc(keyboardCallback);
 	glutSpecialFunc(KeyboardSpecial);
@@ -410,6 +411,9 @@ void startApp(int argc, char **argv, const char* win_title)
 	glutMouseWheelFunc(mouseWheel);
 	glutMotionFunc(mouseDragCallback);
 	glutPassiveMotionFunc(mouseMoveCallback);
+	*/
+	glutMotionFunc(mouseDragCallback);
+	glutPassiveMotionFunc(mouseDragCallback);
 	glutDisplayFunc(drawScene);
 	glutIdleFunc(mainLoop);
 
@@ -420,12 +424,29 @@ void startApp(int argc, char **argv, const char* win_title)
 
 	glClearColor(0.447f, 0.565f, 0.604f, 1.0f);
 
-	ImGui_ImplGLUT_Init();
+
+	// Setup ImGui binding
+	ImGui::CreateContext();
+	ImGuiIO& io = ImGui::GetIO(); (void)io;
+	//io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;  // Enable Keyboard Controls
+
+	ImGui_ImplFreeGLUT_Init();
+	ImGui_ImplFreeGLUT_InstallFuncs();
+	ImGui_ImplOpenGL2_Init();
 
 	//register clipboard functions 
-	ImGuiIO& io = ImGui::GetIO();
 	io.SetClipboardTextFn = guiSetClipboardText;
 	io.GetClipboardTextFn = guiGetClipboardText;
+	io.ClipboardUserData = NULL;
+
+	// Setup style
+	//ImGui::StyleColorsDark();
+	ImGui::StyleColorsClassic();
+
+	// load font
+	io.Fonts->AddFontDefault(); 
+	auto roboto = io.Fonts->AddFontFromMemoryCompressedTTF(font_roboto_compressed_data, font_roboto_compressed_size, 16.0f);
+	io.FontDefault = roboto;
 
 	//no imgui.ini file saving
 	io.IniFilename = NULL;
@@ -435,8 +456,10 @@ void startApp(int argc, char **argv, const char* win_title)
 
 	glutMainLoop();
 
-
-	ImGui_ImplGLUT_Shutdown();
+	// Cleanup
+	ImGui_ImplOpenGL2_Shutdown();
+	ImGui_ImplFreeGLUT_Shutdown();
+	ImGui::DestroyContext();
 }
 
 void resetView(float x1, float y1, float z1, float x2, float y2, float z2, float roll)
