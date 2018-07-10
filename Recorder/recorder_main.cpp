@@ -3,7 +3,6 @@
 // [KNOWN ISSUES]
 // - With 60fps in R200, color frame delays
 
-
 #include "../common/my_capture_kinect1.h"
 
 #include "../common/app_common.h"
