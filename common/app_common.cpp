@@ -264,7 +264,7 @@ void startApp(int argc, char **argv, const char* win_title)
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
 	glGetFloatv(GL_MODELVIEW_MATRIX, mvmat);
-	viewZ = -10.0;
+	viewZ = -5.0;
 
 	glClearColor(0.447f, 0.565f, 0.604f, 1.0f);
 

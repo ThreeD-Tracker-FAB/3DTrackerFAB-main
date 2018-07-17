@@ -186,6 +186,10 @@ void MyCaptureKinect1::setInfraredCamGain(double gain_value)
 	std::cout << "IR cam gain is not implemented for Kinect..." << std::endl;
 }
 
+void MyCaptureKinect1::setInfraredCamExposure(double exp_value)
+{
+}
+
 void MyCaptureKinect1::getCameraIntrinsics(INuiCoordinateMapper** cm, int camera_id)
 {
 	*cm = cameras[camera_id].mapper;

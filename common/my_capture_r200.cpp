@@ -39,39 +39,31 @@ void MyCaptureR200::startStreams(StreamSetting ss)
 		if (ss.fps == 1) fps = 60;
 		else fps = 30;
 
-		if (ss.depth_on)
 		{
 			int w, h;
 			if (ss.depth_res == 1) { w = 480; h = 360; }
 			else { w = 320; h = 240; }
 			c.dev->enable_stream(rs::stream::depth, w, h, rs::format::z16, fps);
 		}
-		else
-		{
-			c.dev->disable_stream(rs::stream::depth);
-		}
-		if (ss.color_on)
+
+		if (ss.smode == SMODE_DEPTH_COLOR)
 		{
 			int w, h;
 			if (ss.color_res == 0) { w = 640; h = 480; }
 			else { w = 640; h = 480; }
 			c.dev->enable_stream(rs::stream::color, w, h, rs::format::bgr8, fps);
-		}
-		else
-		{
-			c.dev->disable_stream(rs::stream::color);
-		}
-		if (ss.ir_on)
-		{
-			int w, h;
-			if (ss.ir_res == 1) { w = 480; h = 360; }
-			else { w = 320; h = 240; }
-			c.dev->enable_stream(rs::stream::infrared, w, h, rs::format::y8, fps);
-		}
-		else
-		{
 			c.dev->disable_stream(rs::stream::infrared);
 		}
+		else if (ss.smode == SMODE_DEPTH_IR)
+		{
+			int w, h;
+			if (ss.depth_res == 1) { w = 480; h = 360; }
+			else { w = 320; h = 240; }
+			c.dev->enable_stream(rs::stream::infrared, w, h, rs::format::y8, fps);
+			c.dev->disable_stream(rs::stream::color);
+		}
+
+		smode = ss.smode;
 
 		c.dev->start();
 	}
@@ -101,12 +93,22 @@ void MyCaptureR200::updateFrame(Camera & c)
 {
 	rs::intrinsics depth_intrin;
 	depth_intrin = c.dev->get_stream_intrinsics(rs::stream::depth);
-	rs::intrinsics color_intrin = c.dev->get_stream_intrinsics(rs::stream::color);
+
+	rs::intrinsics color_intrin;
+	if (smode == SMODE_DEPTH_COLOR) color_intrin = c.dev->get_stream_intrinsics(rs::stream::color);
+	else if (smode == SMODE_DEPTH_IR) color_intrin = c.dev->get_stream_intrinsics(rs::stream::infrared);
 
 	c.dev->wait_for_frames();
 	c.timestamp = c.dev->get_frame_timestamp(rs::stream::depth);
-	c.timestamp = c.dev->get_frame_timestamp(rs::stream::color);
-	c.color_frame = cv::Mat(cv::Size(color_intrin.width, color_intrin.height), CV_8UC3, (void*)c.dev->get_frame_data(rs::stream::color), cv::Mat::AUTO_STEP);
+	if (smode == SMODE_DEPTH_COLOR)
+	{
+		c.color_frame = cv::Mat(cv::Size(color_intrin.width, color_intrin.height), CV_8UC3, (void*)c.dev->get_frame_data(rs::stream::color), cv::Mat::AUTO_STEP);
+	}
+	else if (smode == SMODE_DEPTH_IR)
+	{
+		cv::Mat ir = cv::Mat(cv::Size(color_intrin.width, color_intrin.height), CV_8UC1, (void*)c.dev->get_frame_data(rs::stream::infrared), cv::Mat::AUTO_STEP);
+		cv::cvtColor(ir, c.color_frame, CV_GRAY2BGR);
+	}
 	c.depth_frame = cv::Mat(cv::Size(depth_intrin.width, depth_intrin.height), CV_16UC1, (void*)c.dev->get_frame_data(rs::stream::depth), cv::Mat::AUTO_STEP);
 }
 
@@ -139,8 +141,16 @@ void MyCaptureR200::updatePointCloud(Camera & c)
 	RsCameraIntrinsics intrinsics;
 
 	intrinsics.depth_intrin = c.dev->get_stream_intrinsics(rs::stream::depth);
-	intrinsics.depth_to_color = c.dev->get_extrinsics(rs::stream::depth, rs::stream::color);
-	intrinsics.color_intrin = c.dev->get_stream_intrinsics(rs::stream::color);
+	if (smode == SMODE_DEPTH_COLOR)
+	{
+		intrinsics.depth_to_color = c.dev->get_extrinsics(rs::stream::depth, rs::stream::color);
+		intrinsics.color_intrin = c.dev->get_stream_intrinsics(rs::stream::color);
+	}
+	else if (smode == SMODE_DEPTH_IR)
+	{
+		intrinsics.depth_to_color = c.dev->get_extrinsics(rs::stream::depth, rs::stream::infrared);
+		intrinsics.color_intrin = c.dev->get_stream_intrinsics(rs::stream::infrared);
+	}
 	intrinsics.scale = c.dev->get_depth_scale();
 
 	frame2PointCloud(c.color_frame, c.depth_frame, c.pc, intrinsics, pc_filter_setting);
@@ -209,10 +219,19 @@ void MyCaptureR200::getPointCloudData(pcl::PointCloud<pcl::PointXYZRGB>& pc, int
 
 void MyCaptureR200::getCameraIntrinsics(RsCameraIntrinsics & ci, int camera_id)
 {
-	ci.color_intrin = cameras[camera_id].dev->get_stream_intrinsics(rs::stream::color);
 	ci.depth_intrin = cameras[camera_id].dev->get_stream_intrinsics(rs::stream::depth);
 
-	ci.depth_to_color = cameras[camera_id].dev->get_extrinsics(rs::stream::depth, rs::stream::color);
+	if (smode == SMODE_DEPTH_COLOR)
+	{
+		ci.color_intrin = cameras[camera_id].dev->get_stream_intrinsics(rs::stream::color);
+		ci.depth_to_color = cameras[camera_id].dev->get_extrinsics(rs::stream::depth, rs::stream::color);
+	}
+	else if (smode == SMODE_DEPTH_IR)
+	{
+		ci.color_intrin = cameras[camera_id].dev->get_stream_intrinsics(rs::stream::infrared);
+		ci.depth_to_color = cameras[camera_id].dev->get_extrinsics(rs::stream::depth, rs::stream::infrared);
+	}
+
 	ci.scale = cameras[camera_id].dev->get_depth_scale();
 }
 
@@ -277,6 +296,16 @@ void MyCaptureR200::setInfraredEmitter(bool emitter_on, int camera_id)
 void MyCaptureR200::setInfraredCamGain(double gain_value)
 {
 	for (auto c : cameras) c.dev->set_option(rs::option::r200_lr_gain, gain_value);
+}
+
+void MyCaptureR200::setInfraredCamExposure(double exp_value)
+{
+	for (auto c : cameras)
+	{
+		double e_min, e_max, e_step;
+		c.dev->get_option_range(rs::option::r200_lr_exposure, e_min, e_max, e_step);
+		c.dev->set_option(rs::option::r200_lr_exposure, exp_value*(e_max-e_min) + e_min);
+	}
 }
 
 void MyCaptureR200::setColorFilter(PointCloudFilterSetting pcfs)

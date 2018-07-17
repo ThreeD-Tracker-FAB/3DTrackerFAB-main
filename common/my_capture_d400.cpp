@@ -319,6 +319,10 @@ void MyCaptureD400::setInfraredCamGain(double gain_value)
 	for (auto c : cameras) c.pipe.get_active_profile().get_device().first<rs2::depth_sensor>().set_option(RS2_OPTION_LASER_POWER, gain_value);
 }
 
+void MyCaptureD400::setInfraredCamExposure(double exp_value)
+{
+}
+
 void MyCaptureD400::setColorFilter(PointCloudFilterSetting pcfs)
 {
 	pc_filter_setting = pcfs;

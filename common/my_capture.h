@@ -31,17 +31,12 @@ struct MyColorCameraSettings
 	SettingParam gamma;
 };
 
+enum StreamMode { SMODE_DEPTH_COLOR = 0, SMODE_DEPTH_IR = 1 };
 struct StreamSetting
 {
-	bool depth_on;
+	StreamMode smode;
 	int depth_res;
-
-	bool color_on;
 	int color_res;
-
-	bool ir_on;
-	int ir_res;
-
 	int fps;
 };
 
@@ -97,11 +92,14 @@ public:
 	// set infrared camera gain
 	virtual void setInfraredCamGain(double gain_value) = 0;
 
+	// set infrared camera exposure
+	virtual void setInfraredCamExposure(double exp_value) = 0;
+
 	// set point cloud filtering with color
 	virtual void setColorFilter(PointCloudFilterSetting pcfs) = 0;
 
 	// factory for different camera models
-	static std::shared_ptr<MyCapture> create(const std::string & model_name, StreamSetting ss = {true, 0, true, 0, false, 0, 0});
+	static std::shared_ptr<MyCapture> create(const std::string & model_name, StreamSetting ss = { SMODE_DEPTH_COLOR, 0, 0, 0});
 
 };
 
