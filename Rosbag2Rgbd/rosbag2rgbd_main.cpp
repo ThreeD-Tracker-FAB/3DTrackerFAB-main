@@ -157,7 +157,7 @@ int main()
 			color = cv::Mat(cv::Size(cis[i].color_intrin.width, cis[i].color_intrin.height), CV_8UC3, (void*)color_frame.get_data(), cv::Mat::AUTO_STEP);
 			depth = cv::Mat(cv::Size(cis[i].depth_intrin.width, cis[i].depth_intrin.height), CV_16UC1, (void*)depth_frame.get_data(), cv::Mat::AUTO_STEP);
 			
-			thr_grp.create_thread(boost::bind(&MyFileIO::writeRgbdFrame, &fio, color, depth, framesets[0].get_timestamp()/1000.0, i));
+			thr_grp.create_thread(boost::bind(&MyFileIO::writeRgbdFrame, &fio, color, depth, framesets[0].get_timestamp(), i));
 
 		}
 
