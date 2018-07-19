@@ -36,7 +36,7 @@ private:
 
 public:
 
-	MyCaptureD400(int c_w, int c_h, bool disable_depth = false);
+	MyCaptureD400(StreamSetting ss);
 	~MyCaptureD400();
 
 	void startStreams(StreamSetting ss);
@@ -70,7 +70,7 @@ public:
 	static void frame2PointCloud(const cv::Mat & color_frame, const cv::Mat & depth_frame, pcl::PointCloud<pcl::PointXYZRGB> & pc,
 		const RsCameraIntrinsics2 & intrinsics, const PointCloudFilterSetting & filter_setting);
 
-	void startBagRecording(const std::string & path_data_dir, const std::string & name_session, int w = 848, int h = 480, int frate = 30);
+	void startBagRecording(const std::string & path_data_dir, const std::string & name_session, int res_idx = 0, int fps = 30);
 	void stopBagRecording();
 
 private:
@@ -81,7 +81,11 @@ private:
 
 	std::vector<Camera> cameras;
 
-	bool depth_off;
+	StreamMode smode;
+
+	bool bagrec;
+	std::string bagrec_path;
+	std::string bagrec_sessionname;
 
 };
 

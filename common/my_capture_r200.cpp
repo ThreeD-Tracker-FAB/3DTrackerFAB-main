@@ -184,7 +184,6 @@ void MyCaptureR200::frame2PointCloud(const cv::Mat & color_frame, const cv::Mat 
 			rs::float3 color_point = intrinsics.depth_to_color.transform(depth_point);
 			rs::float2 color_pixel = intrinsics.color_intrin.project(color_point);
 
-
 			const int cx = (int)std::round(color_pixel.x), cy = (int)std::round(color_pixel.y);
 
 			if (cx < 0 || cy < 0 || cx >= intrinsics.color_intrin.width || cy >= intrinsics.color_intrin.height) continue;
@@ -303,8 +302,15 @@ void MyCaptureR200::setInfraredCamExposure(double exp_value)
 	for (auto c : cameras)
 	{
 		double e_min, e_max, e_step;
-		c.dev->get_option_range(rs::option::r200_lr_exposure, e_min, e_max, e_step);
-		c.dev->set_option(rs::option::r200_lr_exposure, exp_value*(e_max-e_min) + e_min);
+		if (exp_value < 0.0)
+		{
+			c.dev->set_option(rs::option::r200_lr_auto_exposure_enabled, 1);
+		}
+		else
+		{
+			c.dev->get_option_range(rs::option::r200_lr_exposure, e_min, e_max, e_step);
+			c.dev->set_option(rs::option::r200_lr_exposure, exp_value*(e_max - e_min) + e_min);
+		}
 	}
 }
 

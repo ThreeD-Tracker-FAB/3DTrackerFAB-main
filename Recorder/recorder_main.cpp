@@ -89,6 +89,20 @@ inline float rnd()
 	return (float)std::rand() / (float)RAND_MAX;
 }
 
+void resetIrEmitter()
+{
+	int i;
+
+	for (i = 0; i < metadata.num_camera; i++)
+	{
+		cap->setInfraredEmitter(metadata.rec_ir_emitter[i], i);
+		metadata.rec_ir_emitter[i] = cap->getInfraredEmitter(i);
+	}
+
+	if (metadata.cam_model_name == "D400") cap->setInfraredCamGain(30 + 40 * metadata.rec_ir_gain);
+	else cap->setInfraredCamGain(100 + 100 * metadata.rec_ir_gain);
+}
+
 void searchPointerCenter(pcl::PointCloud<pcl::PointXYZRGB> &pc, pcl::PointXYZRGB &p_center)
 {
 	// get closest point on the pointer and calculate the center of pointer from the value
@@ -269,18 +283,22 @@ void startRecording(bool enable_overwrite_warning)
 	}
 	else if (recording_data_type == MyFileIO::DATA_TYPE_BAG)
 	{
+		
 		int w, h;
 
 		if (bag_rec_res_i == 0) { w = 424; h = 240;  }
 		else if (bag_rec_res_i == 1) { w = 848; h = 480; }
 		else if (bag_rec_res_i == 2) { w = 1280; h = 720; }
 
+		/*
 		int frate;
 		if (bag_rec_frate_i == 0) frate = 30;
 		else if (bag_rec_frate_i == 1) frate = 60;
+		else if (bag_rec_frate_i == 2) frate = 90;	//only IR
+		*/
 
 		std::shared_ptr<MyCaptureD400> cap_d400 = std::static_pointer_cast<MyCaptureD400>(cap);
-		cap_d400->startBagRecording(dname, rec_session_name, w, h, frate);
+		cap_d400->startBagRecording(dname, rec_session_name, bag_rec_res_i, bag_rec_frate_i);
 
 		color_frame_size_original = color_frame_size;
 		color_frame_size = cv::Size(w, h);
@@ -332,15 +350,7 @@ void drawGUI()
 				if (ImGui::MenuItem("load config", "")) 
 				{
 					metadata.loadFile("default_setting.xml"); 
-
-					for (i = 0; i < metadata.num_camera; i++)
-					{
-						cap->setInfraredEmitter(metadata.rec_ir_emitter[i], i);
-						metadata.rec_ir_emitter[i] = cap->getInfraredEmitter(i);
-					}
-
-					if (metadata.cam_model_name == "D400") cap->setInfraredCamGain(30 + 40 * metadata.rec_ir_gain);
-					else cap->setInfraredCamGain(100 + 100 * metadata.rec_ir_gain);
+					resetIrEmitter();
 
 				}
 				if (ImGui::MenuItem("Save config", "")) { metadata.saveFile("default_setting.xml"); }
@@ -463,8 +473,8 @@ void drawGUI()
 					ImGui::Text("Rosbag file recording (only D400)");
 					const char* bres[] = { "424 x 240", "848 x 480", "1280 x 720" };
 					ImGui::Combo("Resolution##bag", &bag_rec_res_i, bres, 3);
-					const char* brate[] = { "30 fps", "60 fps" };
-					ImGui::Combo("Frame rate##bag", &bag_rec_frate_i, brate, 2);
+					const char* brate[] = { "30 fps", "60 fps", "90 fps" };
+					ImGui::Combo("Frame rate##bag", &bag_rec_frate_i, brate, 3);
 
 					if (ImGui::Button("Start Recording Bag"))
 					{
@@ -894,23 +904,12 @@ void initApp()
 {
 	cap = MyCapture::create(metadata.cam_model_name);
 
-	if (cap == nullptr) std::cout << "unknown camera model" << std::endl;
-
 	metadata.num_camera = cap->getNumCamera();
 
-	metadata.pc_transforms.clear();
-	metadata.pc_transforms.resize(cap->getNumCamera());
-	for (auto & t : metadata.pc_transforms) t = Eigen::Matrix4f::Identity();
+	metadata.resetCalibrationParams();
 
-	metadata.roi.x << -1.0, 1.0;
-	metadata.roi.y << -1.0, 1.0;
-	metadata.roi.z << -1.0, 1.0;
-
-	metadata.ref_cam_id = 0;
-	metadata.ref_cam_pos[0] = 0.0; metadata.ref_cam_pos[1] = 0.0; metadata.ref_cam_pos[2] = 0.0;
-	metadata.ref_cam_rot[0] = 0.0; metadata.ref_cam_rot[1] = 0.0; metadata.ref_cam_rot[2] = 0.0;
-
-	metadata.updateRefCamTransform();
+	metadata.loadFile("default_setting.xml", metadata.cam_model_name, metadata.num_camera);
+	resetIrEmitter();
 
 	disp_camera_pc.clear();
 	disp_camera_pc.resize(metadata.num_camera, true);

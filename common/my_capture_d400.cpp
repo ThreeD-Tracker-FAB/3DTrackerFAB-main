@@ -5,43 +5,11 @@
 #include <boost/bind.hpp>
 #include <librealsense2/rsutil.h>
 
-MyCaptureD400::MyCaptureD400(int c_w, int c_h, bool disable_depth)
+MyCaptureD400::MyCaptureD400(StreamSetting ss)
 {
-	rs2::context rs_ctx;
-	const std::string platform_camera_name = "Platform Camera";
+	bagrec = false;
 
-	depth_off = disable_depth;
-
-	cameras.clear();
-
-	for (auto&& dev : rs_ctx.query_devices()) 
-	{
-		if (dev.get_info(RS2_CAMERA_INFO_NAME) == platform_camera_name) continue;
-
-		rs2::pipeline pipe;
-		rs2::config cfg;
-
-		cfg.enable_device(dev.get_info(RS2_CAMERA_INFO_SERIAL_NUMBER));
-		cfg.enable_stream(RS2_STREAM_COLOR, 848, 480, RS2_FORMAT_BGR8, 30);
-		if (!depth_off) cfg.enable_stream(RS2_STREAM_DEPTH, 424, 240, RS2_FORMAT_Z16, 30);
-
-		rs2::pipeline_profile prof = pipe.start(cfg);
-
-		Camera cam;
-
-		cam.pipe = pipe;
-		cam.pc.clear();
-		cam.ci.color_intrin = prof.get_stream(RS2_STREAM_COLOR).as<rs2::video_stream_profile>().get_intrinsics();
-		if (!depth_off)
-		{
-			cam.ci.depth_intrin = prof.get_stream(RS2_STREAM_DEPTH).as<rs2::video_stream_profile>().get_intrinsics();
-			cam.ci.depth_to_color = prof.get_stream(RS2_STREAM_DEPTH).get_extrinsics_to(prof.get_stream(RS2_STREAM_COLOR));
-			cam.ci.scale = prof.get_device().first<rs2::depth_sensor>().get_depth_scale();
-		}
-
-		
-		cameras.push_back(cam);
-	}
+	startStreams(ss);
 
 	num_camera = cameras.size();
 
@@ -53,10 +21,83 @@ MyCaptureD400::MyCaptureD400(int c_w, int c_h, bool disable_depth)
 
 void MyCaptureD400::startStreams(StreamSetting ss)
 {
+	rs2::context rs_ctx;
+	const std::string platform_camera_name = "Platform Camera";
+
+	cameras.clear();
+
+	int fps, c_w, c_h, d_w, d_h;
+
+	if (ss.fps == 2) fps = 90;
+	else if (ss.fps == 1) fps = 60;
+	else fps = 30;
+
+	if (ss.depth_res == 2) { d_w = 1280; d_h = 720; }
+	else if (ss.depth_res == 1) { d_w = 848; d_h = 480; }
+	else { d_w = 424; d_h = 240; }
+
+	if (ss.color_res == 2) { c_w = 1280; c_h = 720; }
+	else if (ss.color_res == 1) { c_w = 848; c_h = 480; }
+	else { c_w = 424; c_h = 240; }
+
+	smode = ss.smode;
+
+	for (auto&& dev : rs_ctx.query_devices())
+	{
+		if (dev.get_info(RS2_CAMERA_INFO_NAME) == platform_camera_name) continue;
+
+		rs2::pipeline pipe;
+		rs2::config cfg;
+
+		cfg.enable_device(dev.get_info(RS2_CAMERA_INFO_SERIAL_NUMBER));
+
+		if (smode == SMODE_DEPTH_COLOR)
+		{
+			cfg.enable_stream(RS2_STREAM_COLOR, c_w, c_h, RS2_FORMAT_BGR8, fps);
+			cfg.enable_stream(RS2_STREAM_DEPTH, d_w, d_h, RS2_FORMAT_Z16, fps);
+		}
+		else if (smode == SMODE_DEPTH_IR)
+		{
+			cfg.enable_stream(RS2_STREAM_INFRARED, 1, d_w, d_h, RS2_FORMAT_Y8, fps);
+			cfg.enable_stream(RS2_STREAM_DEPTH, d_w, d_h, RS2_FORMAT_Z16, fps);
+		}
+
+		if (bagrec)
+		{
+			cfg.enable_record_to_file(bagrec_path + bagrec_sessionname + ".rosbag." + std::to_string(cameras.size() + 1) + ".bag");
+		}
+
+		rs2::pipeline_profile prof = pipe.start(cfg);
+
+		Camera cam;
+
+		cam.pipe = pipe;
+		cam.pc.clear(); 
+		cam.ci.depth_intrin = prof.get_stream(RS2_STREAM_DEPTH).as<rs2::video_stream_profile>().get_intrinsics();
+
+		if (smode == SMODE_DEPTH_COLOR)
+		{
+			cam.ci.color_intrin = prof.get_stream(RS2_STREAM_COLOR).as<rs2::video_stream_profile>().get_intrinsics();
+			cam.ci.depth_to_color = prof.get_stream(RS2_STREAM_DEPTH).get_extrinsics_to(prof.get_stream(RS2_STREAM_COLOR));
+			cam.ci.scale = prof.get_device().first<rs2::depth_sensor>().get_depth_scale();
+		}
+		else if (smode == SMODE_DEPTH_IR)
+		{
+			cam.ci.color_intrin = prof.get_stream(RS2_STREAM_INFRARED, 1).as<rs2::video_stream_profile>().get_intrinsics();
+			cam.ci.depth_to_color = prof.get_stream(RS2_STREAM_DEPTH).get_extrinsics_to(prof.get_stream(RS2_STREAM_INFRARED, 1));
+			cam.ci.scale = prof.get_device().first<rs2::depth_sensor>().get_depth_scale();
+		}
+
+		cameras.push_back(cam);
+	}
 }
 
 void MyCaptureD400::stopStreams()
 {
+	for (auto & c : cameras)
+	{
+		c.pipe.stop();
+	}
 }
 
 void MyCaptureD400::getNextFrames()
@@ -77,12 +118,21 @@ void MyCaptureD400::updateFrame(Camera & c)
 
 	rs2::frame color_frame, depth_frame;
 
-	color_frame = fset.get_color_frame();
-	if (!depth_off) depth_frame = fset.get_depth_frame();
+	if (smode == SMODE_DEPTH_COLOR)
+	{
+		color_frame = fset.get_color_frame(); 
+		c.color_frame = cv::Mat(cv::Size(c.ci.color_intrin.width, c.ci.color_intrin.height), CV_8UC3, (void*)color_frame.get_data(), cv::Mat::AUTO_STEP);
+	}
+	else if (smode == SMODE_DEPTH_IR)
+	{
+		color_frame = fset.get_infrared_frame();
+		cv::Mat ir = cv::Mat(cv::Size(c.ci.color_intrin.width, c.ci.color_intrin.height), CV_8UC1, (void*)color_frame.get_data(), cv::Mat::AUTO_STEP);
+		cv::cvtColor(ir, c.color_frame, CV_GRAY2BGR);
+	}
+	depth_frame = fset.get_depth_frame();
+	c.depth_frame = cv::Mat(cv::Size(c.ci.depth_intrin.width, c.ci.depth_intrin.height), CV_16UC1, (void*)depth_frame.get_data(), cv::Mat::AUTO_STEP);
+	
 	c.timestamp = fset.get_timestamp();
-
-	c.color_frame = cv::Mat(cv::Size(c.ci.color_intrin.width, c.ci.color_intrin.height), CV_8UC3, (void*)color_frame.get_data(), cv::Mat::AUTO_STEP);
-	if (!depth_off) c.depth_frame = cv::Mat(cv::Size(c.ci.depth_intrin.width, c.ci.depth_intrin.height), CV_16UC1, (void*)depth_frame.get_data(), cv::Mat::AUTO_STEP);
 }
 
 void MyCaptureD400::getFrameData(cv::Mat & frame, int camera_id, std::string frame_type)
@@ -112,15 +162,6 @@ void MyCaptureD400::getPointClouds()
 void MyCaptureD400::updatePointCloud(Camera & c)
 {
 	frame2PointCloud(c.color_frame, c.depth_frame, c.pc, c.ci, pc_filter_setting);
-
-	/*
-	intrinsics.depth_intrin = c.dev->get_stream_intrinsics(rs::stream::depth);
-	intrinsics.depth_to_color = c.dev->get_extrinsics(rs::stream::depth, rs::stream::color);
-	intrinsics.color_intrin = c.dev->get_stream_intrinsics(rs::stream::color);
-	intrinsics.scale = c.dev->get_depth_scale();
-
-	frame2PointCloud(c.color_frame, c.depth_frame, c.pc, intrinsics, pc_filter_setting);
-	*/
 }
 
 void MyCaptureD400::frame2PointCloud(const cv::Mat & color_frame, const cv::Mat & depth_frame, pcl::PointCloud<pcl::PointXYZRGB>& pc, const RsCameraIntrinsics2 & intrinsics, const PointCloudFilterSetting & filter_setting)
@@ -180,8 +221,16 @@ void MyCaptureD400::frame2PointCloud(const cv::Mat & color_frame, const cv::Mat 
 	}
 }
 
-void MyCaptureD400::startBagRecording(const std::string & path_data_dir, const std::string & name_session, int w, int h, int frate)
+void MyCaptureD400::startBagRecording(const std::string & path_data_dir, const std::string & name_session, int res_idx, int fps)
 {
+	StreamSetting ss = { smode, res_idx, res_idx, fps };
+	bagrec = true;
+	bagrec_path = path_data_dir;
+	bagrec_sessionname = name_session;
+
+	restartStreams(ss);
+
+	/*
 	for (int i = 0; i < num_camera; i++)
 	{
 		std::string s_num = cameras[i].pipe.get_active_profile().get_device().get_info(RS2_CAMERA_INFO_SERIAL_NUMBER);
@@ -192,7 +241,7 @@ void MyCaptureD400::startBagRecording(const std::string & path_data_dir, const s
 
 		cfg.enable_device(s_num);
 		cfg.enable_stream(RS2_STREAM_COLOR, w, h, RS2_FORMAT_BGR8, frate);
-		if (!depth_off) cfg.enable_stream(RS2_STREAM_DEPTH, w, h, RS2_FORMAT_Z16, frate);
+		cfg.enable_stream(RS2_STREAM_DEPTH, w, h, RS2_FORMAT_Z16, frate);
 		
 		cfg.enable_record_to_file(path_data_dir + name_session + ".rosbag." + std::to_string(i+1) + ".bag");
 
@@ -201,17 +250,22 @@ void MyCaptureD400::startBagRecording(const std::string & path_data_dir, const s
 		//update intrinsics
 		auto prof = cameras[i].pipe.get_active_profile();
 		cameras[i].ci.color_intrin = prof.get_stream(RS2_STREAM_COLOR).as<rs2::video_stream_profile>().get_intrinsics();
-		if (!depth_off)
-		{
+		
 			cameras[i].ci.depth_intrin = prof.get_stream(RS2_STREAM_DEPTH).as<rs2::video_stream_profile>().get_intrinsics();
 			cameras[i].ci.depth_to_color = prof.get_stream(RS2_STREAM_DEPTH).get_extrinsics_to(prof.get_stream(RS2_STREAM_COLOR));
 			cameras[i].ci.scale = prof.get_device().first<rs2::depth_sensor>().get_depth_scale();
-		}
 	}
+	*/
 }
 
 void MyCaptureD400::stopBagRecording()
 {
+	StreamSetting ss = { smode, 0, 0, 30 };
+	bagrec = false;
+
+	restartStreams(ss);
+
+	/*
 	for (int i = 0; i < num_camera; i++)
 	{
 		std::string s_num = cameras[i].pipe.get_active_profile().get_device().get_info(RS2_CAMERA_INFO_SERIAL_NUMBER);
@@ -237,6 +291,7 @@ void MyCaptureD400::stopBagRecording()
 			cameras[i].ci.scale = prof.get_device().first<rs2::depth_sensor>().get_depth_scale();
 		}
 	}
+	*/
 }
 
 void MyCaptureD400::getPointCloudData(pcl::PointCloud<pcl::PointXYZRGB>& pc, int camera_id)
@@ -321,6 +376,21 @@ void MyCaptureD400::setInfraredCamGain(double gain_value)
 
 void MyCaptureD400::setInfraredCamExposure(double exp_value)
 {
+	
+	for (auto c : cameras)
+	{
+		auto dev = c.pipe.get_active_profile().get_device().first<rs2::depth_sensor>();
+
+		if (exp_value < 0.0)
+		{
+			dev.set_option(RS2_OPTION_ENABLE_AUTO_EXPOSURE, 1);
+		}
+		else
+		{
+			auto range = dev.get_option_range(RS2_OPTION_EXPOSURE);
+			dev.set_option(RS2_OPTION_EXPOSURE, exp_value*(range.max - range.min) + range.min);
+		}
+	}
 }
 
 void MyCaptureD400::setColorFilter(PointCloudFilterSetting pcfs)

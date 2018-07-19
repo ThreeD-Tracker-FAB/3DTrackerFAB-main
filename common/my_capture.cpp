@@ -17,7 +17,7 @@ std::shared_ptr<MyCapture> MyCapture::create(const std::string & model_name, Str
 	if (model_name == "D400")
 	{
 		std::cout << "MyCapture::create - D400 is selected as the model" << std::endl;
-		return std::shared_ptr<MyCapture>(new MyCaptureD400(848, 480));
+		return std::shared_ptr<MyCapture>(new MyCaptureD400(ss));
 	}
 	else if (model_name == "R200")
 	{
