@@ -46,15 +46,11 @@ bool rec_trigger_by_ttl = false;
 std::shared_ptr<MyCapture> cap;
 std::vector<MyColorCameraSettings> ccs;
 
-std::vector<pcl::PointCloud<pcl::PointXYZRGB>> calibration_trace;
-std::vector<pcl::PointCloud<pcl::PointXYZRGB>> calibration_trace_filtered;
-
 MyMetadata metadata;
 
 std::shared_ptr<MyFileIO> fileIO;
 
 bool show_camera_setting_window = false;
-bool show_calibration_window = false;
 bool show_framerate_window = false;
 bool show_rec_window = true;
 bool show_pc_appearance_setting_window = false;
@@ -63,8 +59,6 @@ bool show_camera_monitor = false;
 bool color_each_camera = false;
 bool recording = false;
 bool recording_pause = false;
-
-int calibration_mode = 0;
 
 clock_t rec_t0 = 0;
 char rec_session_name[256];
@@ -103,109 +97,6 @@ void resetIrEmitter()
 	else cap->setInfraredCamGain(100 + 100 * metadata.rec_ir_gain);
 }
 
-void searchPointerCenter(pcl::PointCloud<pcl::PointXYZRGB> &pc, pcl::PointXYZRGB &p_center)
-{
-	// get closest point on the pointer and calculate the center of pointer from the value
-	
-	int i;
-
-	// algorithm1. simple closest point from camera
-	p_center.z = 10000.0;
-	for (auto p : pc)
-	{
-		if (p.z < p_center.z) p_center = p;
-	}
-
-	p_center.r = 0;
-	p_center.g = 0;
-	p_center.b = 0;
-	p_center.z += metadata.calib_pointer_diameter / 1000.0 / 2.0;
-
-}
-
-void addCalibrationTrace()
-{
-	int i;
-
-	bool flag_pointer_detected = true;
-	for (i = 0; i < cap->getNumCamera(); i++)
-	{
-		pcl::PointCloud<pcl::PointXYZRGB> pc;
-
-		cap->getPointCloudData(pc, i);
-
-		if (pc.size() == 0) flag_pointer_detected = false;
-	}
-
-	if (flag_pointer_detected)
-	{
-		for (i = 0; i < cap->getNumCamera(); i++)
-		{
-			pcl::PointCloud<pcl::PointXYZRGB> pc;
-			cap->getPointCloudData(pc, i);
-
-			pcl::PointXYZRGB p_center;
-			searchPointerCenter(pc, p_center);
-
-			calibration_trace[i].push_back(p_center);
-		}
-
-	}
-}
-
-void updateCalibrationTraceFiltered(int meanK, float thresh, int begin_i, int end_i)
-{
-	int i,j;
-
-	// temporal triming
-	std::vector<pcl::PointCloud<pcl::PointXYZRGB>> calibration_trace_trimed;
-	calibration_trace_trimed.clear();
-	calibration_trace_trimed.resize(cap->getNumCamera());
-	for (i = 0; i < cap->getNumCamera(); i++)
-	{
-		if (end_i < begin_i) end_i = calibration_trace[i].size();
-
-		for (j = 0; j < calibration_trace[i].size(); j++)
-		{
-			if (j >= begin_i && j <= end_i) calibration_trace_trimed[i].push_back(calibration_trace[i][j]);
-		}
-	}
-
-	// outlier removal filtering
-	calibration_trace_filtered.clear();
-	calibration_trace_filtered.resize(cap->getNumCamera());
-
-	if (calibration_trace_trimed[0].size() < 5) return;		//don't calculate if the number is too small
-
-	std::vector<int> cnt_good(calibration_trace_trimed[0].size(), 0);
-	for (i = 0; i < cap->getNumCamera(); i++)
-	{
-		std::vector<int> ids;
-
-		pcl::StatisticalOutlierRemoval<pcl::PointXYZRGB> sor;
-		sor.setInputCloud(calibration_trace_trimed[i].makeShared());
-		sor.setMeanK(meanK);
-		sor.setStddevMulThresh(thresh);
-		sor.filter(ids);
-
-		for (auto p_i : ids) cnt_good[p_i]++;
-	}
-
-	pcl::IndicesPtr ids_good(new std::vector <int>);
-	for (i = 0; i < cnt_good.size(); i++)
-	{
-		if (cnt_good[i] == cap->getNumCamera()) ids_good->push_back(i);
-	}
-
-	for (i = 0; i < cap->getNumCamera(); i++)
-	{
-		pcl::ExtractIndices<pcl::PointXYZRGB> eifilter;
-		eifilter.setInputCloud(calibration_trace_trimed[i].makeShared());
-		eifilter.setIndices(ids_good);
-		eifilter.filter(calibration_trace_filtered[i]);
-	}
-}
-
 void loadColorCameraSettings()
 {
 	ccs.clear();
@@ -223,7 +114,7 @@ void getProcessedPC(pcl::PointCloud<pcl::PointXYZRGB> &pc, int camera_id)
 {
 	cap->getPointCloudData(pc, camera_id);
 
-	if (calibration_mode == 0) pcl::transformPointCloud(pc, pc, metadata.pc_transforms[camera_id]);
+	pcl::transformPointCloud(pc, pc, metadata.pc_transforms[camera_id]);
 	pcl::transformPointCloud(pc, pc, metadata.ref_cam_transform);
 
 	if (metadata.rec_enable_roi_filtering)
@@ -372,7 +263,6 @@ void drawGUI()
 				{
 					if (show_camera_setting_window) loadColorCameraSettings();
 				}
-				if (ImGui::MenuItem("Calibration", "", &show_calibration_window)) {}
 
 				ImGui::Separator();
 
@@ -614,228 +504,6 @@ void drawGUI()
 			ImGui::End();
 		}
 
-		if (show_calibration_window)
-		{
-			ImGui::SetNextWindowSize(ImVec2(350, 0), ImGuiSetCond_Once);
-			ImGui::Begin("Calibration Window", &show_calibration_window);
-
-			static bool test_color_filtering = false;
-			static bool test_outlier_removal = false;
-			static int trace_outlier_removal_meanK = 50;
-			static float trace_outlier_removal_thresh = 1.0;
-
-			static int temp_triming_begin_i = 0;
-			static int temp_triming_end_i = 1;
-
-			if (calibration_mode == 0)
-			{
-				ImGui::Text("Reference Camera Position & Pose");
-
-				if (ImGui::DragFloat3("Pos (m; XYZ)", metadata.ref_cam_pos, 0.005, -5.0, 5.0, "%.3f")) metadata.updateRefCamTransform();
-				if (ImGui::DragFloat3("Rot (deg; XYZ)", metadata.ref_cam_rot, 0.5, -360.0, 360.0, "%.1f"))metadata.updateRefCamTransform();
-
-				ImGui::Separator();
-
-				ImGui::Text("Tracked Pointer Property");
-				if (ImGui::SliderFloat("diameter (mm)", &metadata.calib_pointer_diameter, 1.0, 100.0, "%.1f")) {}
-
-				ImGui::Separator();
-
-				ImGui::Text("Color Filtering");
-				
-				if (ImGui::SliderInt("Min Brightness", &metadata.calib_color_filt_b_range[0], 0, 255))
-				{
-					PointCloudFilterSetting pcsf;
-					pcsf.color_filt_on = test_color_filtering;
-					pcsf.color_filt_hsv_min = cv::Scalar(0, 0, metadata.calib_color_filt_b_range[0]);
-					pcsf.color_filt_hsv_max = cv::Scalar(255, 255, metadata.calib_color_filt_b_range[1]);
-					pcsf.outlier_removal_on = test_outlier_removal;
-					pcsf.outlier_filt_meanK = metadata.calib_outlier_removal_meanK;
-					pcsf.outlier_filt_thresh = metadata.calib_outlier_removal_thresh;
-
-					cap->setColorFilter(pcsf);
-				}
-
-				if (ImGui::Checkbox("Test##Color Filt", &test_color_filtering))
-				{
-					if (test_outlier_removal) test_color_filtering = true; // forcing turn on color filtering to prevent slow processing during outlier removal
-
-					PointCloudFilterSetting pcsf;
-					pcsf.color_filt_on = test_color_filtering;
-					pcsf.color_filt_hsv_min = cv::Scalar(0, 0, metadata.calib_color_filt_b_range[0]);
-					pcsf.color_filt_hsv_max = cv::Scalar(255, 255, metadata.calib_color_filt_b_range[1]);
-					pcsf.outlier_removal_on = test_outlier_removal;
-					pcsf.outlier_filt_meanK = metadata.calib_outlier_removal_meanK;
-					pcsf.outlier_filt_thresh = metadata.calib_outlier_removal_thresh;
-					cap->setColorFilter(pcsf);
-				}
-
-				ImGui::Separator();
-
-				ImGui::Text("Outlier Removal");
-				if (ImGui::SliderInt("Min Neighbors##Outlier Removal", &metadata.calib_outlier_removal_meanK, 1, 200))
-				{
-					PointCloudFilterSetting pcsf;
-					pcsf.color_filt_on = test_color_filtering;
-					pcsf.color_filt_hsv_min = cv::Scalar(0, 0, metadata.calib_color_filt_b_range[0]);
-					pcsf.color_filt_hsv_max = cv::Scalar(255, 255, metadata.calib_color_filt_b_range[1]);
-					pcsf.outlier_removal_on = test_outlier_removal;
-					pcsf.outlier_filt_meanK = metadata.calib_outlier_removal_meanK;
-					pcsf.outlier_filt_thresh = metadata.calib_outlier_removal_thresh;
-					cap->setColorFilter(pcsf);
-				}
-				if (ImGui::SliderFloat("Radius (m)##Outlier Removal", &metadata.calib_outlier_removal_thresh, 0.001, 5.0, "%.3f", 3.0))
-				{
-					PointCloudFilterSetting pcsf;
-					pcsf.color_filt_on = test_color_filtering;
-					pcsf.color_filt_hsv_min = cv::Scalar(0, 0, metadata.calib_color_filt_b_range[0]);
-					pcsf.color_filt_hsv_max = cv::Scalar(255, 255, metadata.calib_color_filt_b_range[1]);
-					pcsf.outlier_removal_on = test_outlier_removal;
-					pcsf.outlier_filt_meanK = metadata.calib_outlier_removal_meanK;
-					pcsf.outlier_filt_thresh = metadata.calib_outlier_removal_thresh;
-					cap->setColorFilter(pcsf);
-				}
-				if (ImGui::Checkbox("Test##Outlier Removal", &test_outlier_removal))
-				{
-					if (test_outlier_removal) test_color_filtering = true;	// forcing turn on color filtering to prevent slow processing
-
-					PointCloudFilterSetting pcsf;
-					pcsf.color_filt_on = test_color_filtering;
-					pcsf.color_filt_hsv_min = cv::Scalar(0, 0, metadata.calib_color_filt_b_range[0]);
-					pcsf.color_filt_hsv_max = cv::Scalar(255, 255, metadata.calib_color_filt_b_range[1]);
-					pcsf.outlier_removal_on = test_outlier_removal;
-					pcsf.outlier_filt_meanK = metadata.calib_outlier_removal_meanK;
-					pcsf.outlier_filt_thresh = metadata.calib_outlier_removal_thresh;
-					cap->setColorFilter(pcsf);
-				}
-
-				ImGui::Separator();
-				
-				ImGui::Text("Reference Camera ID:"); ImGui::SameLine();
-
-				for (i = 0; i < cap->getNumCamera(); i++)
-				{
-					char buf[256];
-					sprintf(buf, "%d##refcam_setting", i + 1);
-
-					int ii = (i + 1) % 8;
-					float g = ((ii / 4) % 2) * 0.7, b = ((ii / 2) % 2) * 0.7, r = (ii % 2) * 0.7;
-					ImColor col(r, g, b);
-
-					ImGui::PushStyleColor(ImGuiCol_CheckMark, (ImVec4)col);
-
-					ImGui::SameLine();
-					ImGui::RadioButton(buf, &metadata.ref_cam_id, i); 
-
-					ImGui::PopStyleColor();
-				}
-
-				ImGui::Separator();
-
-				if (ImGui::Button("Start Pointer Tracking"))
-				{
-					calibration_trace.clear();
-
-					calibration_trace.resize(cap->getNumCamera());
-					for (i = 0; i < cap->getNumCamera(); i++) calibration_trace[i].clear();
-
-					PointCloudFilterSetting pcsf;
-					pcsf.color_filt_on = 1;
-					pcsf.color_filt_hsv_min = cv::Scalar(0, 0, metadata.calib_color_filt_b_range[0]);
-					pcsf.color_filt_hsv_max = cv::Scalar(255, 255, metadata.calib_color_filt_b_range[1]);
-					pcsf.outlier_removal_on = 1;
-					pcsf.outlier_filt_meanK = metadata.calib_outlier_removal_meanK;
-					pcsf.outlier_filt_thresh = metadata.calib_outlier_removal_thresh;
-					cap->setColorFilter(pcsf);
-
-					calibration_mode = 1;
-				}
-
-				if (ImGui::Button("Reset Calibration"))
-				{
-					for (auto & t : metadata.pc_transforms) t = Eigen::Matrix4f::Identity();
-				}
-			}
-			else if (calibration_mode == 1)		// pointer tracking
-			{
-				if (ImGui::Button("Stop Pointer Tracking"))
-				{
-					temp_triming_begin_i = 0;
-					temp_triming_end_i = calibration_trace[0].size();
-
-					updateCalibrationTraceFiltered(trace_outlier_removal_meanK, trace_outlier_removal_thresh, temp_triming_begin_i, temp_triming_end_i);
-
-					calibration_mode = 2;
-				}
-			}
-			else if (calibration_mode == 2)		// calibration finalizing
-			{
-				ImGui::Text("Temporal triming");
-				if (ImGui::DragIntRange2("range##Temporal triming - pointer trace", &temp_triming_begin_i, &temp_triming_end_i, 1, 0, calibration_trace[0].size(), "begin: %.0f", "end: %.0f"))
-				{
-					updateCalibrationTraceFiltered(trace_outlier_removal_meanK, trace_outlier_removal_thresh, temp_triming_begin_i, temp_triming_end_i);
-				}
-
-				ImGui::Text("Outlier Removal");
-
-				if (ImGui::SliderInt("meanK##Outlier Removal - pointer trace", &trace_outlier_removal_meanK, 1, 200))
-				{
-					updateCalibrationTraceFiltered(trace_outlier_removal_meanK, trace_outlier_removal_thresh, temp_triming_begin_i, temp_triming_end_i);
-				}
-
-				if (ImGui::SliderFloat("Threshold (std dev)##Outlier Removal - pointer trace", &trace_outlier_removal_thresh, 0.001, 5.0, "%.3f", 3.0))
-				{
-					updateCalibrationTraceFiltered(trace_outlier_removal_meanK, trace_outlier_removal_thresh, temp_triming_begin_i, temp_triming_end_i);
-				}
-
-				ImGui::Separator();
-
-				if (ImGui::Button("Use the traces for calibration"))
-				{
-					pcl::registration::TransformationEstimationSVD<pcl::PointXYZRGB, pcl::PointXYZRGB> te;
-
-					int ref_id = metadata.ref_cam_id;
-					for (i = 0; i < cap->getNumCamera(); i++)
-					{
-						if (i == ref_id) metadata.pc_transforms[i] = Eigen::Matrix4f::Identity();
-						else te.estimateRigidTransformation(calibration_trace_filtered[i], calibration_trace_filtered[ref_id], metadata.pc_transforms[i]);
-					}
-
-					test_color_filtering = false;
-					test_outlier_removal = false;
-
-					PointCloudFilterSetting pcsf;
-					pcsf.color_filt_on = test_color_filtering;
-					pcsf.color_filt_hsv_min = cv::Scalar(0, 0, metadata.calib_color_filt_b_range[0]);
-					pcsf.color_filt_hsv_max = cv::Scalar(255, 255, metadata.calib_color_filt_b_range[1]);
-					pcsf.outlier_removal_on = test_outlier_removal;
-					pcsf.outlier_filt_meanK = metadata.calib_outlier_removal_meanK;
-					pcsf.outlier_filt_thresh = metadata.calib_outlier_removal_thresh;
-
-					cap->setColorFilter(pcsf);
-
-					calibration_mode = 0;
-				}
-				if (ImGui::Button("Cancel"))
-				{
-
-					PointCloudFilterSetting pcsf;
-					pcsf.color_filt_on = test_color_filtering;
-					pcsf.color_filt_hsv_min = cv::Scalar(0, 0, metadata.calib_color_filt_b_range[0]);
-					pcsf.color_filt_hsv_max = cv::Scalar(255, 255, metadata.calib_color_filt_b_range[1]);
-					pcsf.outlier_removal_on = test_outlier_removal;
-					pcsf.outlier_filt_meanK = metadata.calib_outlier_removal_meanK;
-					pcsf.outlier_filt_thresh = metadata.calib_outlier_removal_thresh;
-
-					cap->setColorFilter(pcsf);
-
-					calibration_mode = 0;
-				}
-			}
-			
-			ImGui::End();
-		}
-
 		if (show_pc_appearance_setting_window)
 		{
 
@@ -960,8 +628,6 @@ void loopApp()
 
 	if (!recording || recording_data_type == MyFileIO::DATA_TYPE_PC) cap->getPointClouds();
 
-	if (calibration_mode == 1) addCalibrationTrace();
-
 	boost::thread_group thr_grp;
 
 	for (int i = 0; i < cap->getNumCamera(); i++)
@@ -1061,7 +727,7 @@ void displayApp()
 	int i;
 	const int n = cap->getNumCamera();
 
-	if (!recording && calibration_mode != 2)
+	if (!recording)
 	{
 		for (i = 0; i < n; i++)
 		{
@@ -1090,32 +756,6 @@ void displayApp()
 					glVertex3f(p.x, p.y, p.z);
 				}
 
-			}
-			glEnd();
-		}
-	}
-
-	if (calibration_mode > 0)
-	{
-		for (i = 0; i < n; i++)
-		{
-
-			glPointSize(3.0);
-			glBegin(GL_POINTS);
-
-			pcl::PointCloud<pcl::PointXYZRGB> pc;
-			if (calibration_mode == 1) pcl::transformPointCloud(calibration_trace[i], pc, metadata.ref_cam_transform);
-			else pcl::transformPointCloud(calibration_trace_filtered[i], pc, metadata.ref_cam_transform);
-
-			int ii = (i + 1) % 8;
-			int g = ((ii / 4) % 2) * 255, b = ((ii / 2) % 2) * 255, r = (ii % 2) * 255;
-
-			glColor3ub(r, g, b);
-
-			for (auto & p : pc)
-			{
-				//glColor3ub(p.r, p.g, p.b);
-				glVertex3f(p.x, p.y, p.z);
 			}
 			glEnd();
 		}
