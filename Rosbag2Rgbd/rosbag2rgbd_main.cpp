@@ -58,6 +58,7 @@ int main()
 	std::vector<rs2::frameset> framesets;
 	std::vector<RsCameraIntrinsics2> cis;
 
+	StreamMode smode = SMODE_DEPTH_COLOR;
 
 	// step 1: load bag files //////////////////////////////////////////////////////
 
@@ -72,14 +73,34 @@ int main()
 		rs2::pipeline pipe;
 		std::string filepath = data_dir + session_name + ".rosbag." + std::to_string(i + 1) + ".bag";
 		loadbagfile(pipe, filepath);
+		try
+		{
+			pipe.get_active_profile().get_stream(RS2_STREAM_COLOR);
+		}
+		catch (...)
+		{
+			std::cout << "no_color - IR mode will be used" << std::endl;
+			smode = SMODE_DEPTH_IR;
+		}
+
 		pipes.push_back(pipe);
 		framenumbers.push_back(0ULL);
 
 		RsCameraIntrinsics2 ci;
 		auto prof = pipe.get_active_profile();
-		ci.color_intrin = prof.get_stream(RS2_STREAM_COLOR).as<rs2::video_stream_profile>().get_intrinsics();
+
+		if (smode == SMODE_DEPTH_COLOR)
+		{
+			ci.color_intrin = prof.get_stream(RS2_STREAM_COLOR).as<rs2::video_stream_profile>().get_intrinsics();
+			ci.depth_to_color = prof.get_stream(RS2_STREAM_DEPTH).get_extrinsics_to(prof.get_stream(RS2_STREAM_COLOR));
+		}
+		else if (smode == SMODE_DEPTH_IR)
+		{
+			ci.color_intrin = prof.get_stream(RS2_STREAM_INFRARED, 1).as<rs2::video_stream_profile>().get_intrinsics();
+			ci.depth_to_color = prof.get_stream(RS2_STREAM_DEPTH).get_extrinsics_to(prof.get_stream(RS2_STREAM_INFRARED, 1));
+
+		}
 		ci.depth_intrin = prof.get_stream(RS2_STREAM_DEPTH).as<rs2::video_stream_profile>().get_intrinsics();
-		ci.depth_to_color = prof.get_stream(RS2_STREAM_DEPTH).get_extrinsics_to(prof.get_stream(RS2_STREAM_COLOR));
 		ci.scale = prof.get_device().first<rs2::depth_sensor>().get_depth_scale();
 
 		cis.push_back(ci);
@@ -150,11 +171,22 @@ int main()
 		for (int i = 0; i < num_file; i++)
 		{
 			rs2::frame color_frame, depth_frame;
-			color_frame = framesets[i].get_color_frame();
+			if (smode == SMODE_DEPTH_COLOR) color_frame = framesets[i].get_color_frame();
+			else if (smode == SMODE_DEPTH_IR) color_frame = framesets[i].get_infrared_frame();
 			depth_frame = framesets[i].get_depth_frame();
 		
 			cv::Mat color, depth;
-			color = cv::Mat(cv::Size(cis[i].color_intrin.width, cis[i].color_intrin.height), CV_8UC3, (void*)color_frame.get_data(), cv::Mat::AUTO_STEP);
+			if (smode == SMODE_DEPTH_COLOR)
+			{
+				color = cv::Mat(cv::Size(cis[i].color_intrin.width, cis[i].color_intrin.height), CV_8UC3, (void*)color_frame.get_data(), cv::Mat::AUTO_STEP);
+			}
+			else if (smode == SMODE_DEPTH_IR)
+			{
+				cv::Mat ir = cv::Mat(cv::Size(cis[i].color_intrin.width, cis[i].color_intrin.height), CV_8UC1, (void*)color_frame.get_data(), cv::Mat::AUTO_STEP);
+				cv::cvtColor(ir, color, CV_GRAY2BGR);
+
+			}
+			
 			depth = cv::Mat(cv::Size(cis[i].depth_intrin.width, cis[i].depth_intrin.height), CV_16UC1, (void*)depth_frame.get_data(), cv::Mat::AUTO_STEP);
 			
 			thr_grp.create_thread(boost::bind(&MyFileIO::writeRgbdFrame, &fio, color, depth, framesets[0].get_timestamp(), i));
