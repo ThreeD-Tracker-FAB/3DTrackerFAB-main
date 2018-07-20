@@ -78,6 +78,7 @@ float disp_point_size = 3.0;
 int bag_rec_res_i = 0;
 int bag_rec_frate_i = 0;
 
+
 inline float rnd()
 {
 	return (float)std::rand() / (float)RAND_MAX;
@@ -570,8 +571,6 @@ void drawGUI()
 
 void initApp()
 {
-	cap = MyCapture::create(metadata.cam_model_name);
-
 	metadata.num_camera = cap->getNumCamera();
 
 	metadata.resetCalibrationParams();
@@ -771,7 +770,6 @@ void displayApp()
 
 int main(int argc, char **argv)
 {
-
 	if (checkD400Connection())
 	{
 		metadata.cam_model_name = "D400";
@@ -789,6 +787,16 @@ int main(int argc, char **argv)
 		printf("no camera is connected.\n");
 		exit(0);
 	}
+
+	StreamMode smode = SMODE_DEPTH_COLOR;
+	for (int i = 1; i < argc; i++)
+	{
+		if (strcmp(argv[i], "-IR") == 0)
+		{
+			smode = SMODE_DEPTH_IR;
+		}
+	}
+	cap = MyCapture::create(metadata.cam_model_name, { smode, 0, 0, 0 });
 
 	startApp(argc, argv, "Recorder");
 
