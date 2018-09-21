@@ -357,6 +357,7 @@ void drawGUI()
 					startRecording(true);
 				}
 
+#ifndef BUILD_ENABLE_DIO
 				if (metadata.cam_model_name == "D400")
 				{
 					ImGui::Separator();
@@ -373,7 +374,7 @@ void drawGUI()
 						startRecording(true);
 					}
 				}
-
+#endif
 				#ifdef BUILD_ENABLE_DIO
 				ImGui::Checkbox("Trigger Recording by TTL", &rec_trigger_by_ttl);
 				#endif
