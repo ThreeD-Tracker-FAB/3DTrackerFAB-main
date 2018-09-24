@@ -8,6 +8,8 @@
 #include <pcl/common/transforms.h>
 #include <sstream>
 
+#include "my_metadata.h"
+
 struct SettingParam
 {
 	double value;
@@ -29,6 +31,15 @@ struct MyColorCameraSettings
 	SettingParam gamma;
 };
 
+enum StreamMode { SMODE_DEPTH_COLOR = 0, SMODE_DEPTH_IR = 1 };
+struct StreamSetting
+{
+	StreamMode smode;
+	int depth_res;
+	int color_res;
+	int fps;
+};
+
 struct PointCloudFilterSetting
 {
 	bool color_filt_on;
@@ -45,6 +56,12 @@ class MyCapture
 {
 public:
 	virtual ~MyCapture() {};
+
+	// start/stop stream
+	virtual void startStreams(StreamSetting ss) = 0;
+	virtual void stopStreams() = 0;
+
+	void restartStreams(StreamSetting ss) { stopStreams(); startStreams(ss); }
 
 	// acquire the next frames in all the cameras
 	virtual void getNextFrames() = 0;	
@@ -75,13 +92,20 @@ public:
 	// set infrared camera gain
 	virtual void setInfraredCamGain(double gain_value) = 0;
 
+	// set infrared camera exposure
+	virtual void setInfraredCamExposure(double exp_value) = 0;
+
 	// set point cloud filtering with color
 	virtual void setColorFilter(PointCloudFilterSetting pcfs) = 0;
 
 	// factory for different camera models
-	static std::shared_ptr<MyCapture> create(const std::string & model_name);
+	static std::shared_ptr<MyCapture> create(const std::string & model_name, StreamSetting ss = { SMODE_DEPTH_COLOR, 0, 0, 0});
 
 };
 
 // convenience functions
 void removeNoiseFromThresholdedPc(pcl::PointCloud<pcl::PointXYZRGB> & pc, int meanK, float thresh); // removing outlier noise from point cloud
+void preprocessFrame(MyMetadata & metadata, std::vector<pcl::PointCloud<pcl::PointXYZRGB>> & pc_input, pcl::PointCloud<pcl::PointXYZRGBNormal> & pc_merged, float gridsize, std::vector<bool> cam_enable = std::vector<bool>());
+bool checkR200Connection(); // check R200 camera connections
+bool checkD400Connection(); // check D400 camera connections
+bool checkKinect1Connection(); // check Kinect1 camera connections

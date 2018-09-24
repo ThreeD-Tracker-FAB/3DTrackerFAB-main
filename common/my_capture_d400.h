@@ -1,28 +1,33 @@
 #pragma once
 
+#pragma once
+
 #include "my_capture.h"
-#include <librealsense/rs.hpp>
+#include <librealsense2/rs.hpp>
 
 #include <opencv2/opencv.hpp>
 #include <pcl/point_types.h>
 #include <pcl/common/transforms.h>
 
 
-struct RsCameraIntrinsics
+struct RsCameraIntrinsics2
 {
-	rs::intrinsics depth_intrin;
-	rs::extrinsics depth_to_color;
-	rs::intrinsics color_intrin;
+	rs2_intrinsics depth_intrin;
+	rs2_extrinsics depth_to_color;
+	rs2_intrinsics color_intrin;
 	float scale;
 };
 
-class MyCaptureR200 :
+class MyCaptureD400 :
 	public MyCapture
 {
 private:
 	struct Camera
 	{
-		rs::device *dev;
+		rs2::pipeline pipe;
+
+		RsCameraIntrinsics2 ci;
+
 		pcl::PointCloud<pcl::PointXYZRGB> pc;
 		cv::Mat color_frame;
 		cv::Mat depth_frame;
@@ -31,8 +36,8 @@ private:
 
 public:
 
-	MyCaptureR200(StreamSetting ss);
-	~MyCaptureR200();
+	MyCaptureD400(StreamSetting ss);
+	~MyCaptureD400();
 
 	void startStreams(StreamSetting ss);
 	void stopStreams();
@@ -46,7 +51,7 @@ public:
 
 	double getFrameTimestamp(int camera_id) { return cameras[camera_id].timestamp; };
 
-	void getCameraIntrinsics(RsCameraIntrinsics & ci, int camera_id);
+	void getCameraIntrinsics(RsCameraIntrinsics2 & ci, int camera_id);
 
 	void getColorCameraSettings(MyColorCameraSettings & cs, int camera_id);
 	void setColorCameraSettings(MyColorCameraSettings & cs, int camera_id);
@@ -63,12 +68,12 @@ public:
 	void updatePointCloud(Camera & c);
 
 	static void frame2PointCloud(const cv::Mat & color_frame, const cv::Mat & depth_frame, pcl::PointCloud<pcl::PointXYZRGB> & pc,
-								 const RsCameraIntrinsics & intrinsics, const PointCloudFilterSetting & filter_setting);
+		const RsCameraIntrinsics2 & intrinsics, const PointCloudFilterSetting & filter_setting);
 
+	void startBagRecording(const std::string & path_data_dir, const std::string & name_session, int res_idx = 0, int fps = 30);
+	void stopBagRecording();
 
 private:
-
-	rs::context rs_ctx;
 
 	int num_camera;
 
@@ -77,6 +82,10 @@ private:
 	std::vector<Camera> cameras;
 
 	StreamMode smode;
+
+	bool bagrec;
+	std::string bagrec_path;
+	std::string bagrec_sessionname;
 
 };
 

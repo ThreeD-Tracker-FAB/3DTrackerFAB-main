@@ -77,7 +77,8 @@ void drawGUI()
 	static bool show_colorvideo_monitor = false;
 	static bool show_framerate_window = false;
 
-    ImGui_ImplGLUT_NewFrame(getAppScreenWidth(), getAppScreenHeight());
+	ImGui_ImplOpenGL2_NewFrame();
+	ImGui_ImplFreeGLUT_NewFrame();
 
 	{
 		if (ImGui::BeginMainMenuBar())
@@ -201,9 +202,10 @@ void drawGUI()
 
 	if (show_framerate_window)
 	{
-		ImGui::SetNextWindowPos(ImVec2(getAppScreenWidth() - 130, getAppScreenHeight() - 40));
+		ImGuiIO& io = ImGui::GetIO();
+		ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - 130, io.DisplaySize.y - 40));
 		ImGui::Begin("Frame Rate Window", nullptr, ImVec2(0, 0), 0.3f, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
-		ImGui::Text("%.1f frames/sec", ImGui::GetIO().Framerate);
+		ImGui::Text("%.1f frames/sec", io.Framerate);
 		ImGui::End();
 	}
 

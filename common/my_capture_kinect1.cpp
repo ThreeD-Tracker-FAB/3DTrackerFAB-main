@@ -67,6 +67,14 @@ MyCaptureKinect1::~MyCaptureKinect1()
 	}
 }
 
+void MyCaptureKinect1::startStreams(StreamSetting ss)
+{
+}
+
+void MyCaptureKinect1::stopStreams()
+{
+}
+
 void MyCaptureKinect1::getNextFrames()
 {
 	boost::thread_group thr_grp;
@@ -176,6 +184,10 @@ void MyCaptureKinect1::setInfraredEmitter(bool emitter_on, int camera_id)
 void MyCaptureKinect1::setInfraredCamGain(double gain_value)
 {
 	std::cout << "IR cam gain is not implemented for Kinect..." << std::endl;
+}
+
+void MyCaptureKinect1::setInfraredCamExposure(double exp_value)
+{
 }
 
 void MyCaptureKinect1::getCameraIntrinsics(INuiCoordinateMapper** cm, int camera_id)

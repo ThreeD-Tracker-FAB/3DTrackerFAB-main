@@ -33,6 +33,9 @@ public:
 	MyCaptureKinect1();
 	~MyCaptureKinect1();
 
+	void startStreams(StreamSetting ss);
+	void stopStreams();
+
 	void getNextFrames();
 	void getPointClouds();
 
@@ -51,6 +54,7 @@ public:
 	void setInfraredEmitter(bool emitter_on, int camera_id);
 
 	void setInfraredCamGain(double gain_value);
+	void setInfraredCamExposure(double exp_value);
 
 	void getCameraIntrinsics(INuiCoordinateMapper** cm, int camera_id);
 

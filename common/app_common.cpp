@@ -9,12 +9,6 @@ GLfloat mvmat[16];
 unsigned int app_screen_width = 960;
 unsigned int app_screen_height = 720;
 
-int release_key = -1;
-
-unsigned int getAppScreenWidth() { return app_screen_width; }
-
-unsigned int getAppScreenHeight() { return app_screen_height; };
-
 void drawAxis(double length)
 {
 	GLUquadricObj *arrows[3];
@@ -136,139 +130,9 @@ void drawScene()
 	//app specific display func
 	displayApp();
 
+	ImGui_ImplOpenGL2_RenderDrawData(ImGui::GetDrawData());
+
 	glutSwapBuffers();
-}
-
-bool keyboardEvent(unsigned char nChar, int nX, int nY)
-{
-	ImGuiIO& io = ImGui::GetIO();
-
-	switch (nChar)
-	{
-	case 127: // delete
-		io.KeysDown[nChar] = true; break;
-	case 8: // backspace
-		io.KeysDown[nChar] = true; break;
-	
-	case 1: // Ctrl+A
-		io.KeysDown[nChar] = true; break;	//does not work
-	case 3: // Ctrl+C
-		io.KeysDown[nChar] = true; break;	//does not work
-	case 22: // Ctrl+V
-		io.KeysDown[nChar] = true; break;	//does not work
-	case 24: // Ctrl+X
-		io.KeysDown[nChar] = true; break;	//does not work
-	case 25: // Ctrl+Y
-		io.KeysDown[nChar] = true; break;	//does not work
-	case 26: // Ctrl+Z
-		io.KeysDown[nChar] = true; break;	//does not work
-	
-	default:
-		io.AddInputCharacter(nChar);
-		if (!io.WantCaptureKeyboard) io.KeysDown[nChar] = true;
-	}
-
-	io.KeyCtrl = glutGetModifiers() & GLUT_ACTIVE_CTRL;
-	io.KeyShift = glutGetModifiers() & GLUT_ACTIVE_SHIFT;
-	
-	return true;
-}
-
-void KeyboardSpecial(int key, int x, int y)
-{
-	ImGuiIO& io = ImGui::GetIO();
-	//io.AddInputCharacter(key);
-	io.KeysDown[key] = true;
-
-	io.KeyCtrl = glutGetModifiers() & GLUT_ACTIVE_CTRL;
-	io.KeyShift = glutGetModifiers() & GLUT_ACTIVE_SHIFT;
-}
-
-void keyboardUpCallback(unsigned char nChar, int nX, int nY)
-{
-	ImGuiIO& io = ImGui::GetIO();
-
-	io.KeysDown[nChar] = false;
-
-	io.KeyCtrl = glutGetModifiers() & GLUT_ACTIVE_CTRL;
-	io.KeyShift = glutGetModifiers() & GLUT_ACTIVE_SHIFT;
-}
-
-void KeyboardSpecialUp(int key, int x, int y)
-{
-	ImGuiIO& io = ImGui::GetIO();
-	io.KeysDown[key] = false;
-
-	io.KeyCtrl = glutGetModifiers() & GLUT_ACTIVE_CTRL;
-	io.KeyShift = glutGetModifiers() & GLUT_ACTIVE_SHIFT;
-}
-
-bool mouseEvent(int button, int state, int x, int y)
-{
-	ImGuiIO& io = ImGui::GetIO();
-
-	io.MousePos = ImVec2((float)x, (float)y);
-
-	if (state == GLUT_DOWN && (button == GLUT_LEFT_BUTTON))
-		io.MouseDown[0] = true;
-	else
-		io.MouseDown[0] = false;
-
-	if (state == GLUT_DOWN && (button == GLUT_RIGHT_BUTTON))
-		io.MouseDown[1] = true;
-	else
-		io.MouseDown[1] = false;
-
-	if (state == GLUT_DOWN && (button == GLUT_MIDDLE_BUTTON))
-		io.MouseDown[2] = true;
-	else
-		io.MouseDown[2] = false;
-
-	io.KeyCtrl = glutGetModifiers() & GLUT_ACTIVE_CTRL;
-	io.KeyShift = glutGetModifiers() & GLUT_ACTIVE_SHIFT;
-
-	return true;
-}
-
-void mouseWheel(int button, int dir, int x, int y)
-{
-	ImGuiIO& io = ImGui::GetIO();
-	io.MousePos = ImVec2((float)x, (float)y);
-	if (dir > 0)
-	{
-		// Zoom in
-		io.MouseWheel = 1.0;
-	}
-	else if (dir < 0)
-	{
-		// Zoom out
-		io.MouseWheel = -1.0;
-	}
-
-	io.KeyCtrl = glutGetModifiers() & GLUT_ACTIVE_CTRL;
-	io.KeyShift = glutGetModifiers() & GLUT_ACTIVE_SHIFT;
-}
-
-void reshape(int w, int h)
-{
-	// update screen width and height for imgui new frames
-	app_screen_width = w;
-	app_screen_height = h;
-}
-
-void keyboardCallback(unsigned char nChar, int x, int y)
-{
-	if (keyboardEvent(nChar, x, y))
-	{
-		glutPostRedisplay();
-	}
-}
-
-void mouseCallback(int button, int state, int x, int y)
-{
-	if (mouseEvent(button, state, x, y))
-	{
-	}
 }
 
 void mouseDragCallback(int x, int y)
@@ -331,22 +195,13 @@ void mouseDragCallback(int x, int y)
 	io.KeyShift = glutGetModifiers() & GLUT_ACTIVE_SHIFT;
 }
 
-void mouseMoveCallback(int x, int y)
-{
-	ImGuiIO& io = ImGui::GetIO();
-	io.MousePos = ImVec2((float)x, (float)y);
-
-	io.KeyCtrl = glutGetModifiers() & GLUT_ACTIVE_CTRL;
-	io.KeyShift = glutGetModifiers() & GLUT_ACTIVE_SHIFT;
-}
-
 void mainLoop(void)
 {
 	//app specific loop func
 	loopApp();
 }
 
-void guiSetClipboardText(const char* text)
+static void guiSetClipboardText(void* user_data, const char* text)
 {
 	int    buf_size;
 	char  *buf;
@@ -359,7 +214,7 @@ void guiSetClipboardText(const char* text)
 	buf = (char *)GlobalLock(h_mem);
 	if (buf)
 	{
-		strcpy(buf, text);
+		strcpy_s(buf, buf_size, text);
 		GlobalUnlock(h_mem);
 		if (OpenClipboard(NULL))
 		{
@@ -370,7 +225,7 @@ void guiSetClipboardText(const char* text)
 	}
 }
 
-const char* guiGetClipboardText()
+static const char* guiGetClipboardText(void* user_data)
 {
 	HANDLE h_mem;
 	PTSTR str_clip;
@@ -401,31 +256,40 @@ void startApp(int argc, char **argv, const char* win_title)
 	glutCreateWindow(win_title);
 
 	// callback
-	glutReshapeFunc(reshape);
-	glutKeyboardFunc(keyboardCallback);
-	glutSpecialFunc(KeyboardSpecial);
-	glutKeyboardUpFunc(keyboardUpCallback);
-	glutSpecialUpFunc(KeyboardSpecialUp);
-	glutMouseFunc(mouseCallback);
-	glutMouseWheelFunc(mouseWheel);
 	glutMotionFunc(mouseDragCallback);
-	glutPassiveMotionFunc(mouseMoveCallback);
+	glutPassiveMotionFunc(mouseDragCallback);
 	glutDisplayFunc(drawScene);
 	glutIdleFunc(mainLoop);
 
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
 	glGetFloatv(GL_MODELVIEW_MATRIX, mvmat);
-	viewZ = -10.0;
+	viewZ = -5.0;
 
 	glClearColor(0.447f, 0.565f, 0.604f, 1.0f);
 
-	ImGui_ImplGLUT_Init();
+	// Setup ImGui binding
+	ImGui::CreateContext();
+	ImGuiIO& io = ImGui::GetIO(); (void)io;
+	//io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;  // Enable Keyboard Controls
+
+	ImGui_ImplFreeGLUT_Init();
+	ImGui_ImplFreeGLUT_InstallFuncs();
+	ImGui_ImplOpenGL2_Init();
 
 	//register clipboard functions 
-	ImGuiIO& io = ImGui::GetIO();
 	io.SetClipboardTextFn = guiSetClipboardText;
 	io.GetClipboardTextFn = guiGetClipboardText;
+	io.ClipboardUserData = NULL;
+
+	// Setup style
+	//ImGui::StyleColorsDark();
+	ImGui::StyleColorsClassic();
+
+	// load font
+	io.Fonts->AddFontDefault(); 
+	auto roboto = io.Fonts->AddFontFromMemoryCompressedTTF(font_roboto_compressed_data, font_roboto_compressed_size, 16.0f);
+	io.FontDefault = roboto;
 
 	//no imgui.ini file saving
 	io.IniFilename = NULL;
@@ -435,8 +299,10 @@ void startApp(int argc, char **argv, const char* win_title)
 
 	glutMainLoop();
 
-
-	ImGui_ImplGLUT_Shutdown();
+	// Cleanup
+	ImGui_ImplOpenGL2_Shutdown();
+	ImGui_ImplFreeGLUT_Shutdown();
+	ImGui::DestroyContext();
 }
 
 void resetView(float x1, float y1, float z1, float x2, float y2, float z2, float roll)

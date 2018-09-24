@@ -77,7 +77,7 @@ public:
 		calib_color_filt_b_range[0] = 100;
 		calib_color_filt_b_range[1] = 255;
 		calib_outlier_removal_meanK = 50;
-		calib_outlier_removal_thresh = 1.0;
+		calib_outlier_removal_thresh = 0.1;
 		calib_pointer_diameter = 40.0;
 
 		rec_enable_roi_filtering = false;
@@ -109,7 +109,24 @@ public:
 		ref_cam_transform = T;
 	}
 
-	int loadFile(const char* filename)
+	void resetCalibrationParams()
+	{
+		pc_transforms.clear();
+		pc_transforms.resize(num_camera);
+		for (auto & t : pc_transforms) t = Eigen::Matrix4f::Identity();
+
+		roi.x << -1.0, 1.0;
+		roi.y << -1.0, 1.0;
+		roi.z << -1.0, 1.0;
+
+		ref_cam_id = 0;
+		ref_cam_pos[0] = 0.0; ref_cam_pos[1] = 0.0; ref_cam_pos[2] = -0.01;
+		ref_cam_rot[0] = 0.0; ref_cam_rot[1] = 0.0; ref_cam_rot[2] = 0.0;
+
+		updateRefCamTransform();
+	}
+
+	int loadFile(const char* filename, const std::string & modelname = "", int n_cam = 0)
 	{
 		std::ifstream ifs(filename);
 		if (!ifs)
@@ -118,9 +135,22 @@ public:
 			return 0;
 		}
 
+		MyMetadata input_data;
+
 		boost::archive::xml_iarchive ia(ifs);
-		ia >> BOOST_SERIALIZATION_NVP(*this);
+		ia >> BOOST_SERIALIZATION_NVP(input_data);
 		ifs.close();
+
+		if (modelname != "")
+		{
+			if (input_data.cam_model_name != modelname || input_data.num_camera != n_cam)
+			{
+				std::cout << "can not load " << filename << ". Inconsistent camera model/number." << std::endl;
+				return 0;
+			}	
+		}
+
+		input_data.copyTo(*this);
 
 		this->updateRefCamTransform();
 

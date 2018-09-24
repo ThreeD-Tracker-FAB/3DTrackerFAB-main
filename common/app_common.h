@@ -9,11 +9,11 @@
 #include "gl/freeglut.h"
 
 #include "../imgui/imgui.h"
-#include "../imgui/imgui_impl_glut.h"
+#include "../imgui/imgui_impl_freeglut.h"
+#include "../imgui/imgui_impl_opengl2.h"
 
 #include <pcl/point_types.h>
 #include <pcl/common/transforms.h>
-
 
 
 void drawAxis(double length);
@@ -23,10 +23,6 @@ void drawROI(ROI roi);
 void startApp(int argc, char **argv, const char* win_title);
 
 void setView(bool sel, int mx, int my);		//maybe used also externally for mouse picking
-
-unsigned int getAppScreenWidth();
-
-unsigned int getAppScreenHeight();
 
 void resetView(float x1, float y1, float z1, float x2, float y2, float z2, float roll);		// change view to the specified one (e.g., camera position)
 

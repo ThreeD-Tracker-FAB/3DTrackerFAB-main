@@ -3,6 +3,7 @@
 #include <string>
 #include "my_capture_kinect1.h"
 #include "my_capture_r200.h"
+#include "my_capture_d400.h"
 #include "my_metadata.h"
 #include "rodent_tracker.h"
 
@@ -18,6 +19,7 @@ public:
 		DATA_TYPE_RGBD = 0,
 		DATA_TYPE_PC = 1,
 		DATA_TYPE_MERGED_PC = 2,
+		DATA_TYPE_BAG = 3,
 	};
 
 	struct FrameIndex
@@ -29,9 +31,11 @@ public:
 	MyMetadata metadata;
 
 	MyFileIO();
-	MyFileIO(const std::string & metadatafilepath);														// for opening existing data
-	MyFileIO(const std::string & path_data_dir, const std::string & name_session, MyMetadata & md);		// for recording new data
+	MyFileIO(const std::string & metadatafilepath, bool online = false);														// for opening existing data
+	MyFileIO(const std::string & path_data_dir, const std::string & name_session, MyMetadata & md);		// for recording new data		
 	~MyFileIO();
+
+	void resetRecDir(const std::string & path_data_dir, const std::string & name_session);
 
 	void saveMetadata();
 	void loadMetadata();
@@ -51,6 +55,7 @@ public:
 
 	void saveCameraIntrinsics(std::shared_ptr<MyCapture> & cap);
 	void saveCameraIntrinsics(std::shared_ptr<MyCaptureR200> & cap);
+	void saveCameraIntrinsics(std::shared_ptr<MyCaptureD400> & cap);
 	void saveCameraIntrinsics(std::shared_ptr<MyCaptureKinect1> & cap);
 
 	void startRgbdWriter();
@@ -62,6 +67,8 @@ public:
 	void start2DVideoWriter(int camera_id, int w = 320, int h = 240, int fourcc = CV_FOURCC('X', 'V', 'I', 'D'));
 	void write2DVideoFrame(cv::Mat color_frame, int camera_id);
 
+	void startMergedPcWriter();
+	void writeMergedPcFrame(pcl::PointCloud<pcl::PointXYZRGBNormal> &pc_merged, double timestamp);
 	void preprosessData(float gridsize, std::vector<bool> cam_enable = std::vector<bool>());
 
 	void startRgbdReader();
@@ -81,12 +88,17 @@ public:
 	void start2DVideoReader();
 	void read2DVideoFrame(cv::Mat & vid_frame, int camera_id, size_t frame_id);
 
+	double updateOnlineFrame();
+
 	std::string getDataPathHeader() { return data_dir + session_name;  };
 
 	void closeFiles();
 
 	void export2DVideoFromRGBD(int fourcc = CV_FOURCC('X', 'V', 'I', 'D'));
-	
+
+	static void saveCameraIntrinsics(RsCameraIntrinsics2 & ci, FILE *fo);
+	static void loadCameraIntrinsics(RsCameraIntrinsics2 & ci, FILE *fi);
+
 	static void saveCameraIntrinsics(RsCameraIntrinsics & ci, FILE *fo);
 	static void loadCameraIntrinsics(RsCameraIntrinsics & ci, FILE *fi);
 
@@ -127,12 +139,21 @@ private:
 	std::vector<std::shared_ptr<cv::VideoCapture>> cv_videocapture;
 
 	std::vector<RsCameraIntrinsics> camera_intrinsics;
+	std::vector<RsCameraIntrinsics2> camera_intrinsics2;
 	std::vector<INuiCoordinateMapper*> camera_intrinsics_k;
+
+	bool online_mode;
+	std::shared_ptr<MyCapture> cap;
 
 	static void saveRsIntrinsic(rs::intrinsics & intrin, FILE *fo);
 	static void loadRsIntrinsic(rs::intrinsics & intrin, FILE *fi);
 	static void saveRsExtrinsic(rs::extrinsics & extrin, FILE *fo);
 	static void loadRsExtrinsic(rs::extrinsics & extrin, FILE *fi);
+
+	static void saveRs2Intrinsic(rs2_intrinsics & intrin, FILE *fo);
+	static void loadRs2Intrinsic(rs2_intrinsics & intrin, FILE *fi);
+	static void saveRs2Extrinsic(rs2_extrinsics & extrin, FILE *fo);
+	static void loadRs2Extrinsic(rs2_extrinsics & extrin, FILE *fi);
 
 };
 
